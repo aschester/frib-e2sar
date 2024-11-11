@@ -5,7 +5,7 @@ This is a repository for various E2SAR-related development at FRIB. The subdirec
 ## Requirements
 
 - E2SAR software and prereqs (https://github.com/JeffersonLab/E2SAR/wiki/Code-and-Binaries)
-- NSCLDAQ
+- NSCLDAQ 12.1 or later
 - FRIB unified format library
 - CMake 3.18
 
@@ -13,19 +13,21 @@ A Docker container based on Debian 11 (Bullseye) with preinstalled E2SAR binarie
 
 ## Building the examples
 
-- Clone the repository:
+- Clone the repository: `https://github.com/aschester/frib-e2sar.git`
 - Assuming the environment is configured correctly, build using `CMake`:
 
 ```
-cmake .. -DNSCLDAQ_ROOT=/usr/opt/daq/12.1-004
+mkdir build && cd build
+cmake .. -DNSCLDAQ_ROOT=/path/to/nscldaq/dir
 cmake --build .
+cmake --install . --prefix "/path/to/installation/dir"
 ```
 
 - You can override the default unified format path by setting an alternative during the first stage of the build with `-DUFMT_ROOT=/path/to/ufmt`.
-- To build parallel, use the `-j` flag: `cmake --build . -j N` where `N` is the number of cores you'd like to use.
+- To build in parallel, use the `-j` flag: `cmake --build . -j N` where `N` is the number of cores you'd like to use.
 
 ## Running the examples
 
 Running a code with the `-h` option will describe the program usage.
 
-Most codes will expect an EJFAT URI either passed as a command line or stored in an environment variable. Generally anything passed on the command line will override any preset settings. For testing I have generally: `export EJFAT_URI="ejfat://mytoken@127.0.0.1:23456/lb/123?data=127.0.0.1:23457&sync=127.0.0.1:23458"`. The quotes on the string may be needed to prevent your shell from interpreting `&` as a shell command. For point-to-point reassembly, the receiver should listen on the data port, in this case 23457.
+Most codes will expect an EJFAT URI either passed as a command line or stored in an environment variable. Generally anything passed on the command line will override any preset settings. For testing I have generally set: `export EJFAT_URI="ejfat://mytoken@127.0.0.1:23456/lb/123?data=127.0.0.1:23457&sync=127.0.0.1:23458"`. The quotes on the string may be needed to prevent your shell from interpreting `&` as a shell command. For point-to-point reassembly, the receiver should listen on the data port, which is in this case 23457.
