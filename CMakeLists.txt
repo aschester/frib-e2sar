@@ -1,0 +1,44 @@
+##
+# Build a bunch of E2SAR examples
+# ASC 11/08/24
+#
+
+cmake_minimum_required(VERSION 3.18)
+project(E2SAR_Examples VERSION 0.1 DESCRIPTION "E2SAR Examples" LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+find_package(
+  Boost COMPONENTS system url thread chrono random program_options REQUIRED
+  )
+find_package(Threads REQUIRED)
+find_package(PkgConfig REQUIRED)
+find_program(PKG_CONFIG_EXECUTABLE pkg-config)
+pkg_check_modules(E2SAR REQUIRED e2sar)
+pkg_check_modules(GRPC REQUIRED grpc++)
+pkg_check_modules(Protobuf REQUIRED protobuf)
+
+set(NSCLDAQ_ROOT "_"  CACHE STRING "Path to NSCLDAQ installation")
+set(NSCLDAQ_INC "${NSCLDAQ_ROOT}/include" CACHE STRING "NSCLDAQ include dir")
+set(NSCLDAQ_LIB "${NSCLDAQ_ROOT}/lib" CACHE STRING "NSCLDAQ lib dir")
+message(STATUS "Using NSLCDAQ: ${NSCLDAQ_ROOT}")
+
+# For now no ringbuffer support from ufmt:
+
+set(UFMT_ROOT "${NSCLDAQ_ROOT}/unifiedformat" CACHE STRING "Path to unified format library installation")
+set(UFMT_INC "${UFMT_ROOT}/include" CACHE STRING "Unified format include dir")
+set(UFMT_LIB "${UFMT_ROOT}/lib" CACHE STRING "Unified format lib dir")
+message(STATUS "Using Unified format: ${UFMT_ROOT}")
+
+set(DDASFMT_ROOT "${NSCLDAQ_ROOT}/ddasformat" CACHE STRING "Path to DDAS format library installation")
+set(DDASFMT_INC "${DDASFMT_ROOT}/include" CACHE STRING "DDAS format include dir")
+set(DDASFMT_LIB "${DDASFMT_ROOT}/lib" CACHE STRING "DDAS format lib dir")
+message(STATUS "Using DDAS format: ${DDASFMT_ROOT}")
+
+add_subdirectory(checkdefaults)
+add_subdirectory(sendrecv)
+add_subdirectory(fromini)
+add_subdirectory(simdata)
+
+set(ini_files reassembler_config.ini segmenter_config.ini)
+install(FILES ${ini_files} DESTINATION .)

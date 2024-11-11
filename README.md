@@ -1,0 +1,31 @@
+# FRIB-E2SAR dev
+
+This is a repository for various E2SAR-related development at FRIB. The subdirectories contain examples demonstrating how to perform simple initialization and segmenter-reassembly tasks up to and including an E2SAR workflow for simulated FRIBDAQ data (see `simdata`).
+
+## Requirements
+
+- E2SAR software and prereqs (https://github.com/JeffersonLab/E2SAR/wiki/Code-and-Binaries)
+- NSCLDAQ
+- FRIB unified format library
+- CMake 3.18
+
+A Docker container based on Debian 11 (Bullseye) with preinstalled E2SAR binaries and prereqs is available here: https://hub.docker.com/r/aschester/e2sar-bullseye.
+
+## Building the examples
+
+- Clone the repository:
+- Assuming the environment is configured correctly, build using `CMake`:
+
+```
+cmake .. -DNSCLDAQ_ROOT=/usr/opt/daq/12.1-004
+cmake --build .
+```
+
+- You can override the default unified format path by setting an alternative during the first stage of the build with `-DUFMT_ROOT=/path/to/ufmt`.
+- To build parallel, use the `-j` flag: `cmake --build . -j N` where `N` is the number of cores you'd like to use.
+
+## Running the examples
+
+Running a code with the `-h` option will describe the program usage.
+
+Most codes will expect an EJFAT URI either passed as a command line or stored in an environment variable. Generally anything passed on the command line will override any preset settings. For testing I have generally: `export EJFAT_URI="ejfat://mytoken@127.0.0.1:23456/lb/123?data=127.0.0.1:23457&sync=127.0.0.1:23458"`. The quotes on the string may be needed to prevent your shell from interpreting `&` as a shell command. For point-to-point reassembly, the receiver should listen on the data port, in this case 23457.
