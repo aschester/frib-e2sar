@@ -28,12 +28,7 @@ message(STATUS "Using NSLCDAQ: ${NSCLDAQ_ROOT}")
 set(UFMT_ROOT "${NSCLDAQ_ROOT}/unifiedformat" CACHE STRING "Path to unified format library installation")
 set(UFMT_INC "${UFMT_ROOT}/include" CACHE STRING "Unified format include dir")
 set(UFMT_LIB "${UFMT_ROOT}/lib" CACHE STRING "Unified format lib dir")
-message(STATUS "Using Unified format: ${UFMT_ROOT}")
-
-set(DDASFMT_ROOT "${NSCLDAQ_ROOT}/ddasformat" CACHE STRING "Path to DDAS format library installation")
-set(DDASFMT_INC "${DDASFMT_ROOT}/include" CACHE STRING "DDAS format include dir")
-set(DDASFMT_LIB "${DDASFMT_ROOT}/lib" CACHE STRING "DDAS format lib dir")
-message(STATUS "Using DDAS format: ${DDASFMT_ROOT}")
+message(STATUS "Using NSCLDAQ unified format: ${UFMT_ROOT}")
 
 add_subdirectory(checkdefaults)
 add_subdirectory(sendrecv)

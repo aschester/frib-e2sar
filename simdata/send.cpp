@@ -6,18 +6,39 @@
 #include <iostream>
 #include <cstddef>
 #include <string>
+#include <cstdint>
 
 #include <boost/program_options.hpp>
 
 #include <e2sar.hpp>
 #include <e2sarDPSegmenter.hpp>
 
-#include <DDASDataSimulator.h>
-#include <DDASHit.h>
-#include <Exception.h>
+// Unified format library:
+
 #include <NSCLDAQFormatFactorySelector.h>
 #include <DataFormat.h>
+#include <RingItemFactoryBase.h>
+
+// These are headers for the abstrct ring items we can get back from the
+// factory. As new ring items are added this set of #include's must be
+// updated as well as any processing steps.
+
+#include <CRingItem.h>
+#include <CAbnormalEndItem.h>
+#include <CDataFormatItem.h>
+#include <CGlomParameters.h>
+#include <CPhysicsEventItem.h>
+#include <CRingFragmentItem.h>
+#include <CRingPhysicsEventCountItem.h>
+#include <CRingScalerItem.h>
+#include <CRingTextItem.h>
+#include <CRingStateChangeItem.h>
+#include <CUnknownFragment.h>
+
+// Other NSCLDAQ headers:
+
 #include <URL.h>
+#include <Exception.h>
 
 #include "DataSource.h"
 #include "FdDataSource.h"
@@ -32,12 +53,7 @@ using namespace ufmt;
 // that instead require atomic operations:
 
 boost::pool<> *evtBufPool;
-boost::lockfree::queue<u_int8_t*> returnBufferQueue{10000};
-
-// Event payload:
-
-uint16_t evtPldStart = 0x1234;
-uint16_t evtPldEnd = 0xabcd;
+boost::lockfree::queue<u_int8_t*> evtBufQueue{10000};
 
 // Other global config:
 
@@ -46,7 +62,20 @@ Segmenter* segPtr{nullptr};
 LBManager* lbmPtr{nullptr};       // nullptr if CP is not enabled
 std::vector<std::string> senders; // Empty if CP is not enabled
 
-void ctrlCHandler(int sig) 
+void
+dumpBuffer(u_int8_t* buf, size_t bytes) {
+    std::cout << "------------------------------------------" << std::endl;
+    for (auto i = 0; i < bytes; i++) {
+	if (i != 0 && i%8 == 0) {
+	    printf("\n");
+	}
+	printf("%02x ", (unsigned)buf[i]);
+    }
+    std::cout << std::dec << std::endl;
+}
+
+void
+ctrlCHandler(int sig) 
 {
     std::cout << "Stopping threads" << std::endl;
 
@@ -90,14 +119,14 @@ getOpts(int ac, char* av[])
 	 po::value<std::string>(),
 	 "URI from the command line to override EJFAT_URI envvar")
 	("num,n",
-	 po::value<size_t>()->default_value(10),
-	 "number of events to send")
+	 po::value<size_t>(),
+	 "number of events to send, if not specified: send all events")
 	("bufsize,b",
 	 po::value<size_t>()->default_value(1024*1024),
 	 "event buffer size in bytes")
 	("source,s",
 	 po::value<std::string>()->required(),
-	 "path to input data file")
+	 "Input data URI (file or stream only)")
 	("nscldaq-version,v",
 	 po::value<int>()->default_value(12),
 	 "NSCLDAQ data format major version number")
@@ -188,22 +217,25 @@ printFlags(const Segmenter::SegmenterFlags& flags)
 	      << std::endl;
 }
 
-void freeBuffer(boost::any a) 
+void
+freeBuffer(boost::any a) 
 {
     auto p = boost::any_cast<u_int8_t*>(a);
-    returnBufferQueue.push(p);
+    evtBufQueue.push(p);
 }
 
-result<int> sendEvents(Segmenter &s, EventNum_t startEvtNum,
-		       size_t numEvts, size_t evtBufSize,
-		       float rateGbps=1.0, bool debug=false)
+result<int>
+sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents, size_t evtBufSize, float rateGbps=1.0, bool debug=false)
 {
-    // Convert bit rate to event rate:
+    // Convert bit rate to event rate. Sleep at least 1 us between sends:
     
     float eventRate{rateGbps*1000000000/(evtBufSize*8)};
     u_int64_t interEventSleepUsec{
 	static_cast<u_int64_t>(evtBufSize*8/(rateGbps * 1000))
     };
+    if (interEventSleepUsec == 0) { // Max send rate 1 MHz
+	interEventSleepUsec = 1;
+    }			 
 
     std::cout.imbue(std::locale(""));
     std::cout << "Sending bit rate is " << rateGbps << " Gbps" << std::endl;
@@ -212,26 +244,15 @@ result<int> sendEvents(Segmenter &s, EventNum_t startEvtNum,
     std::cout << "Event rate is " << eventRate << " Hz" << std::endl;
     std::cout << "Inter-event sleep time is " << interEventSleepUsec
 	      << " microseconds" << std::endl;
-    std::cout << "Sending " << numEvts << " event buffers" << std::endl;
+    std::cout << "Sending " << nEvents << " event buffers" << std::endl;
     std::cout << "Using MTU " << s.getMTU() << std::endl;
 
-    // Our payload needs to be big enough to hold the start and end, at least:
-    
-    if (s.getMaxPldLen() < sizeof(evtPldStart) + sizeof(evtPldEnd))
-        return E2SARErrorInfo{
-	    E2SARErrorc::LogicError, "MTU is too short to send needed payload"
-	};
-    
     // Start threads, open sockets. Start sending sync packets:
     
     auto open_rv = s.openAndStart();
     if (open_rv.has_error()) {
         return open_rv;
     }
-
-    // Initialize a pool of memory buffers we will be sending:
-    
-    evtBufPool = new boost::pool<>{evtBufSize};
 
     // Sleep to allow small number of frames to leave:
     
@@ -241,39 +262,70 @@ result<int> sendEvents(Segmenter &s, EventNum_t startEvtNum,
     /////////////////////////////////////////////////////////////////////////
     // Send loop
     //
+
+    // Get the current time point:
+	
+    auto now = boost::chrono::high_resolution_clock::now();
     
-    for(size_t evt = 0; evt < numEvts; evt++)
-    {
-        // Get the current time point:
-	
-        auto now = boost::chrono::high_resolution_clock::now();
+    // We run the send loop until we've sent all events or EOF:
+    
+    int remaining = nEvents; 
+    while (1) {	
+	// Get a buffer, either from the queue or by allocating a new one:
 
-        // Send the event:
-	
-        auto evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
-	
-        // Fill in the first part of the buffer with something meaningful
-	// and also the end. The rest of it is whatever random data:
-	
-        memcpy(evtBuf, &evtPldStart, sizeof(evtPldStart));
-	memcpy(evtBuf + evtBufSize - sizeof(evtPldEnd),
-	       &evtPldEnd, sizeof(evtPldEnd));
-
-	if (debug) {
-	    for (int i = 0; i < evtBufSize; i++) {
-		std::cout << std::hex << (int)evtBuf[i] << " ";
-		if (i > 0 && i%8 == 0) std::cout << std::endl;
-	    }
-	    std::cout << std::dec << std::endl;
+	u_int8_t* evtBuf = nullptr;
+	if (!evtBufQueue.pop(evtBuf)) {
+	    evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
 	}
 
-        // Put on queue with a callback to free this buffer. We probably want
-	// to fill in the data ID with something more meaningful here.
-
-	// Note: we override the default data ID here
+	// Get the ring item we'll pack into this buffer and send:
 	
-	auto sendRes = s.addToSendQueue(evtBuf, evtBufSize, startEvtNum,
-					0, 0, &freeBuffer, evtBuf);
+	std::unique_ptr<::ufmt::CRingItem> pItem(pSource->getItem());
+	if (!pItem.get()) { // End of source.
+	    break;
+	}
+	
+	// Extract information from the event copy it into the event buffer,
+	// and add it to the send queue. Event number is timestamp, data Id
+	// is the source Id. In the case no body header is present, the
+	// event timestamp is UINT64_MAX and the data Id is 0.
+
+	EventNum_t evtNumber = UINT64_MAX;
+	u_int16_t dataId     = 0;
+	auto evtBufSize      = pItem->size();
+	u_int16_t entropy    = 0;
+	
+	if (pItem->hasBodyHeader()) {
+	    evtNumber = pItem->getEventTimestamp();
+	    dataId = pItem->getSourceId();
+	}
+	
+	memcpy(evtBuf, pItem->getItemPointer(), evtBufSize);
+	
+	if (debug) {
+	    std::cout << "Sending event:" << std::endl;
+	    std::cout << "\tevtNumber:  " << evtNumber << std::endl;
+	    std::cout << "\tdataId:     " << dataId << std::endl;
+	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
+	    std::cout << "toString():" << std::endl;
+	    std::cout << pItem->toString() << std::endl;
+	    std::cout << "byte dump:" << std::endl;
+	    dumpBuffer(evtBuf, evtBufSize);
+	}
+	    
+   	auto sendq_rv = s.addToSendQueue(evtBuf, evtBufSize, evtNumber, dataId,
+				      entropy, &freeBuffer, evtBuf);
+	if (sendq_rv.has_error()) {
+	    std::cout << sendq_rv.error().message() << std::endl;
+	    continue;
+	}
+	
+	if (nEvents != 0) {
+	    remaining--;
+	    if (remaining <= 0) {
+		break;
+	    }
+	}
 
 	// Wait to send the next event:
 	
@@ -284,14 +336,15 @@ result<int> sendEvents(Segmenter &s, EventNum_t startEvtNum,
 		"Clock overrun, either event buffer length too short or "
 		"requested sending rate too high"};
 	}
-	
-	// Free the backlog of empty buffers:
-	
-	u_int8_t *item{nullptr};
-	while (returnBufferQueue.pop(item)) {
-	    evtBufPool->free(item);
-	}
 	boost::this_thread::sleep_until(until);
+	
+    } // End of send loop
+
+    // Free the backlog of unused buffers:
+	
+    u_int8_t *item{nullptr};
+    while (evtBufQueue.pop(item)) {
+	evtBufPool->free(item);
     }
 
     // Done sending events, report:
@@ -307,7 +360,7 @@ result<int> sendEvents(Segmenter &s, EventNum_t startEvtNum,
 		  << strerror(stats.get<2>()) << std::endl;
     }
     
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 /**
@@ -347,9 +400,9 @@ DataSource*
 makeDataSource(RingItemFactoryBase* pFactory, const std::string& strUrl)
 {
     /////////////////////////////////////////////////////////////////////////
-    ///////////// MASSIVE TODO:
-    /////////////     This fcn coped from ddasdumper and does not support
-    /////////////     ringbuffer src
+    ///////////// IMPORTANT NOTE:
+    /////////////     This function is copied from ddasdumper and does not
+    /////////////     support ringbuffer data sources
     /////////////
     
     
@@ -392,63 +445,71 @@ main(int argc, char* argv[])
 {    
     auto opts = getOpts(argc, argv); // Command-line options.
     signal(SIGINT, ctrlCHandler); // Ctrl-C signal.
-
-    /////////////////////////////////////////////////////////////////////////
-    // Setup NSCLDAQ data source
-    ///    
-
+    
     try {
-	FormatSelector::SupportedVersions version =
-	    mapVersion(opts["nscldaq-version"].as<int>());
+
+	/////////////////////////////////////////////////////////////////////
+	// Configure data source
+	///
+
+	FormatSelector::SupportedVersions version
+	    = mapVersion(opts["nscldaq-version"].as<int>());
 	auto& factory = FormatSelector::selectFactory(version);
-	std::unique_ptr<DataSource> pSource(
-	    makeDataSource(&factory, opts["source"].as<std::string>())
-	    );	    
-    }
-    catch (std::invalid_argument& e) {
-	std::cerr << "Failed to create data source: " << e.what() << std::endl;
-	exit(EXIT_FAILURE);
-    }
+
+	auto name = opts["source"].as<std::string>();
+	std::unique_ptr<DataSource> pSource(makeDataSource(&factory, name));
     
-    /////////////////////////////////////////////////////////////////////////
-    // Setup E2SAR
-    ///
+	/////////////////////////////////////////////////////////////////////
+	// Configure E2SAR
+	///
+
+	// Instance token for sending data:
     
-    EjfatURI::TokenType tt{EjfatURI::TokenType::instance};
+	EjfatURI::TokenType tt{EjfatURI::TokenType::instance};
 
-    // Configure segmenter options:
+	// Configure segmenter options:
 
-    u_int32_t evtSourceId(0);
-    u_int16_t dataId(0);
-    EventNum_t startEvtNum{0};
-    size_t numEvts = opts["num"].as<size_t>();
-    size_t evtBufSize = opts["bufsize"].as<size_t>();
-    auto flags = getFlags(opts); // Call first, set IPv preference
-    auto uri = getURI(opts, tt, flags.dpV6);
-    float rateGbps = 1.0;
-    bool debug = opts.count("debug");
+	u_int32_t evtSourceId(0);
+	u_int16_t dataId(0);
     
-    if (debug) {
-	std::cout << "Using E2SAR version: " << get_Version() << std::endl;
-       	printFlags(flags);
-	std::cout << "Using URI: " << uri.to_string() << std::endl;
-	std::cout << "Sending " << numEvts << " events" << std::endl;
-	std::cout << "Evtbuf size: " << evtBufSize << " bytes" << std::endl;
-    }
+	size_t evtBufSize = opts["bufsize"].as<size_t>();
+	auto flags = getFlags(opts); // Call first, set IPv preference
+	auto uri = getURI(opts, tt, flags.dpV6);
+	size_t nEvents = 0; // 
+	if (opts.count("num")) {
+	    nEvents = opts["num"].as<size_t>();
+	}	    
+	bool debug = opts.count("debug");    
+	float rateGbps = 1.0;
+    
+	if (debug) {
+	    std::cout << "Using E2SAR version: " << get_Version() << std::endl;
+	    printFlags(flags);
+	    std::cout << "Using URI: " << uri.to_string() << std::endl;
+	    std::cout << "Sending " << nEvents << " events" << std::endl;
+	    std::cout << "Max buffer: " << evtBufSize << " bytes" << std::endl;
+	}
 
-    // Instantiate and run:
+	/////////////////////////////////////////////////////////////////////
+	// Instantiate and run Segmenter:
+	///
 
-    try {
+	evtBufPool = new boost::pool<>{evtBufSize}; // For recycling buffers
+	
 	Segmenter seg(uri, dataId, evtSourceId, flags);
 	segPtr = &seg;
-	auto send_rv = sendEvents(seg, startEvtNum, numEvts, evtBufSize,
-				  rateGbps, debug);
+	auto send_rv = sendEvents(seg, pSource.get(), nEvents, evtBufSize, rateGbps, debug);
 	if (send_rv.has_error()) {
 	    std::cerr << "Segmenter encountered an error: "
 		      << send_rv.error().message() << std::endl;
 	    exit(EXIT_FAILURE);
 	}
-    } catch (const E2SARException& e) {
+    }
+    catch (std::invalid_argument& e) {
+	std::cerr << "Failed to create data source: " << e.what() << std::endl;
+	exit(EXIT_FAILURE);
+    }
+    catch (const E2SARException& e) {
 	std::cerr << "Unable to create segmenter: "
 		  << static_cast<std::string>(e) << std::endl;
 	exit(EXIT_FAILURE);

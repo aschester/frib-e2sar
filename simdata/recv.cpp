@@ -8,19 +8,45 @@
 #include <string>
 
 #include <boost/program_options.hpp>
-#include "boost/date_time/posix_time/posix_time.hpp"
+#include <boost/date_time/posix_time/posix_time.hpp>
 
 #include <e2sar.hpp>
 #include <e2sarDPReassembler.hpp>
 
+// Unified format library:
+
+#include <NSCLDAQFormatFactorySelector.h>
+#include <DataFormat.h>
+#include <RingItemFactoryBase.h>
+
+// These are headers for the abstrct ring items we can get back from the
+// factory. As new ring items are added this set of #include's must be
+// updated as well as any processing steps.
+
+#include <CRingItem.h>
+#include <CAbnormalEndItem.h>
+#include <CDataFormatItem.h>
+#include <CGlomParameters.h>
+#include <CPhysicsEventItem.h>
+#include <CRingFragmentItem.h>
+#include <CRingPhysicsEventCountItem.h>
+#include <CRingScalerItem.h>
+#include <CRingTextItem.h>
+#include <CRingStateChangeItem.h>
+#include <CUnknownFragment.h>
+
+// Other NSCLDAQ headers:
+
+//#include <CDataSink.h>
+//#include <CFileDataSink.h>
+#include <Exception.h>
+
 namespace po = boost::program_options;
 namespace pt = boost::posix_time;
 using namespace e2sar;
+using namespace ufmt;
 
-// Event payload:
-
-uint16_t evtPldStart = 0x1234;
-uint16_t evtPldEnd = 0xabcd;
+const size_t MAX_BODY = 8192; // Largest ring item body in bytes
 
 // Other global config:
 
@@ -28,7 +54,20 @@ bool threadsRunning(true);
 u_int16_t reportThreadSleepMs{2000}; // 2 second maximum
 Reassembler* reasPtr{nullptr};
 
-void ctrlCHandler(int sig) 
+void
+dumpBuffer(u_int8_t* buf, size_t bytes) {
+    std::cout << "------------------------------------------" << std::endl;
+    for (auto i = 0; i < bytes; i++) {
+	if (i != 0 && i%8 == 0) {
+	    printf("\n");
+	}
+	printf("%02x ", (unsigned)buf[i]);
+    }
+    std::cout << std::dec << std::endl;
+}
+
+void
+ctrlCHandler(int sig) 
 {
     if (reasPtr != nullptr)
     {
@@ -71,22 +110,51 @@ getOpts(int ac, char* av[])
 	("port",
 	 po::value<u_int16_t>()->default_value(10000),
 	 "starting UDP port number on which receiver listens.")
+	// ("sink,S",
+	//  po::value<std::string>()->required(),
+	//  "path to output file data sink (*not* a URI)")
 	("preferV6",
 	 po::value<bool>()->default_value(false),
 	 "prefer IPv6 over IPv4")
+	("nscldaq-version,v",
+	 po::value<int>()->default_value(12),
+	 "NSCLDAQ data format major version number")
 	("debug", "enable debugging output")
 	;
     po::variables_map vm; // Command line options stored here.
     po::store(po::parse_command_line(ac, av, od), vm);
-    po::notify(vm);
 
     if (vm.count("help"))
     {
         std::cout << od << std::endl;
         exit(EXIT_SUCCESS);
     }
+    
+    po::notify(vm);
 
     return vm;
+}
+
+/**
+ * @brief Map the version we get from the command line to a factory version.
+ * @param fmtIn Format the user requested.
+ * @throw std::invalid_argument Bad format version
+ * @return Factory version ID (from the enum).
+ * @note We should never throw because gengetopt will enforce the enum.
+ */
+FormatSelector::SupportedVersions
+mapVersion(int fmtIn)
+{
+    switch (fmtIn) {
+    case 12:
+	return FormatSelector::v12;
+    case 11:
+	return FormatSelector::v11;
+    case 10:
+	return FormatSelector::v10;
+    default:
+	throw std::invalid_argument("Invalid DAQ format version specifier");
+    }
 }
 
 EjfatURI
@@ -157,15 +225,20 @@ printFlags(const Reassembler::ReassemblerFlags& flags)
     std::cout <<"\tmax_factor\t" << flags.max_factor << std::endl;
 }
 
-result<int> recvEvents(Reassembler &r, int durationSec) {
+result<int>
+recvEvents(Reassembler &r, /*CFileDataSink* pSink,*/ RingItemFactoryBase& factory,
+	   int durationSec, bool debug=false) {
 
     std::cout << "Receiving on ports " << r.get_recvPorts().first
 	      << ":" << r.get_recvPorts().second << std::endl;
 
-    u_int8_t* evtBuf{nullptr};
-    size_t evtBufSize;
-    EventNum_t evtNum;
-    u_int16_t dataId;
+    // Received event information and receiver config:
+    
+    u_int8_t*  evtBuf{nullptr}; // Event buffer
+    size_t     evtBufSize;      // Event buffer size in bytes
+    EventNum_t evtNum;          // Event number (typically timestamp)
+    u_int16_t  dataId;          // Data Id (source Id or other)
+    u_int64_t  waitMs = 2000;   // Wait time in milliseconds
 
     // We assume for now that the CP is disabled:
     
@@ -174,7 +247,6 @@ result<int> recvEvents(Reassembler &r, int durationSec) {
         return open_rv;
     }
     
-    std::cout.imbue(std::locale(""));
     auto now = boost::chrono::steady_clock::now();
 
     /////////////////////////////////////////////////////////////////////////
@@ -183,10 +255,10 @@ result<int> recvEvents(Reassembler &r, int durationSec) {
     
     while(true)
     {
-	// Wait 2 s (2000 ms) for next event:
-	
+	// Blocking receive. Use getEvent() for non-blocking:
+
         auto recv_rv = r.recvEvent(&evtBuf, &evtBufSize, &evtNum,
-				   &dataId, 2000);
+				   &dataId, waitMs);
         auto next = boost::chrono::steady_clock::now();
 
 	// If duration is set stop listening after that time and exit:
@@ -209,32 +281,66 @@ result<int> recvEvents(Reassembler &r, int durationSec) {
             continue;
 	}
 
-	// Data validation: check that the beginning and end of the payload
-	// look as we expect:
-      
-        if (memcmp(evtBuf, &evtPldStart, sizeof(evtPldStart))) {
-	    for (int i=0; i<sizeof(evtPldStart); i++) {
-		std::cout << (int)evtBuf[i] << " " << std::endl;
+	// Data post-processing. The event buffer is a complete ring item.
+
+	u_int8_t* p = evtBuf;
+	auto pHdr = reinterpret_cast<RingItemHeader*>(p);
+	p += sizeof(RingItemHeader);
+	auto pBodyHdr = reinterpret_cast<BodyHeader*>(p);
+	p += pBodyHdr->s_size; // 20 or sizeof(uint32_t)
+
+	if(pHdr->s_type == PHYSICS_EVENT) {
+	    std::unique_ptr<CRingItem> pItem(
+		factory.makeRingItem(pHdr->s_type, pBodyHdr->s_timestamp,
+				     pBodyHdr->s_sourceId, MAX_BODY,
+				     pBodyHdr->s_barrier)
+		);
+	    u_int8_t* pBody = reinterpret_cast<u_int8_t*>(
+		pItem->getBodyCursor()
+		);
+	    int bodySize = evtBufSize - sizeof(RingItemHeader)
+		- pBodyHdr->s_size;
+	    memcpy(pBody, p, bodySize);
+	    pBody += bodySize;	    
+	    pItem->setBodyCursor(pBody);
+	    pItem->updateSize();
+	    
+	    std::cout << pItem->toString() << std::endl;
+	}
+		
+	if (debug) {
+	    std::cout << "Receive event:" << std::endl;
+	    std::cout << "\tevtNumber:  " << evtNum << std::endl;
+	    std::cout << "\tdataId:     " << dataId << std::endl;
+	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
+
+	    std::cout << "Header:" << std::endl;
+	    std::cout << "\tsize: " << pHdr->s_size
+		      << "\n\ttype: " << pHdr->s_type
+		      << std::endl;
+	    std::cout << "Body header with size: " << pBodyHdr->s_size
+		      << std::endl;
+	    if (pBodyHdr->s_size > sizeof(uint32_t)) {
+		std::cout << "\ttimestamp: " << pBodyHdr->s_timestamp
+			  << "\n\tsourceId: " << pBodyHdr->s_sourceId
+			  << "\n\tbarrier: " << pBodyHdr->s_barrier
+			  << std::endl;
+	    } else {
+		std::cout << "\tEmpty body header" << std::endl;
 	    }
-            return E2SARErrorInfo{E2SARErrorc::MemoryError,
-		"Payload start does not match expected"};
 	}
-        if (memcmp(evtBuf + evtBufSize - sizeof(evtPldEnd),
-		   &evtPldEnd, sizeof(evtPldEnd))) {
-            return E2SARErrorInfo{E2SARErrorc::MemoryError,
-		"Payload end doesn't match expected"};
-	}
+		
+	// Cleanup:
 	
         delete evtBuf;
 	evtBuf = nullptr;
     }	
-    
-    std::cout << "Completed" << std::endl;
-    
+        
     return 0;
 }
 
-void recvStatsThread(Reassembler *r)
+void
+recvStatsThread(Reassembler *r)
 {
     std::vector<std::pair<EventNum_t, u_int16_t>> lostEvents;
 
@@ -280,49 +386,68 @@ void recvStatsThread(Reassembler *r)
 }
 
 
-int main(int argc, char* argv[])
+int
+main(int argc, char* argv[])
 {    
     auto opts = getOpts(argc, argv); // Command-line options.
     signal(SIGINT, ctrlCHandler); // Ctrl-C signal:
 
-    /////////////////////////////////////////////////////////////////////////
-    // Setup
-    ///
-    
-    EjfatURI::TokenType tt{EjfatURI::TokenType::instance};
-
-    // Configure reassembler options:
-    
-    auto preferV6 = opts["preferV6"].as<bool>();
-    auto ip_s = opts["ip"].as<std::string>();
-    auto port = opts["port"].as<u_int16_t>();
-    int durationSec = 0;  // Receive duration, 0 is forever
-    size_t numThreads(1); // Receiver threads
-    auto flags = getFlags(opts);
-    auto uri = getURI(opts, tt, preferV6);
-
-    if (opts.count("debug")) {
-	std::cout << "Using E2SAR version: " << get_Version() << std::endl;
-	printFlags(flags);
-	std::cout << "Using URI: " << uri.to_string() << std::endl;
-    }
-
-    // Instantiate and run:
-    
     try {
+
+	/////////////////////////////////////////////////////////////////////
+	// Configure data sink
+	///
+
+	FormatSelector::SupportedVersions version
+	    = mapVersion(opts["nscldaq-version"].as<int>());
+	auto& factory = FormatSelector::selectFactory(version);
+	
+	//auto name = opts["sink"].as<std::string>();
+	//std::unique_ptr<CFileDataSink> pSink(new CFileDataSink(name));
+	
+	/////////////////////////////////////////////////////////////////////
+	// Configure E2SAR
+	///
+
+	EjfatURI::TokenType tt{EjfatURI::TokenType::instance};
+    
+	auto preferV6 = opts["preferV6"].as<bool>();
+	auto ip_s = opts["ip"].as<std::string>();
+	auto port = opts["port"].as<u_int16_t>();
+	int durationSec = 0;  // Receive duration, 0 is forever
+	size_t numThreads(1); // Receiver threads
+	auto flags = getFlags(opts);
+	auto uri = getURI(opts, tt, preferV6);
+	bool debug = opts.count("debug");    
+
+	if (debug) {
+	    std::cout << "Using E2SAR version: " << get_Version() << std::endl;
+	    printFlags(flags);
+	    std::cout << "Using URI: " << uri.to_string() << std::endl;
+	}
+    
+	/////////////////////////////////////////////////////////////////////
+	// Instantiate and run Segmenter:
+	///
+	
 	ip::address ip = ip::make_address(ip_s);
 	Reassembler reas(uri, ip, port, numThreads, flags);
 	reasPtr = &reas;
 	boost::thread statsThread(&recvStatsThread, &reas);
-	auto recv_rv = recvEvents(reas, durationSec);
-	 if (recv_rv.has_error()) {
-	     std::cerr << "Reassembler encountered an error: "
-		       << recv_rv.error().message() << std::endl;
-	 }
+	auto recv_rv = recvEvents(reas, /*pSink.get(),*/ factory, durationSec, debug);
+	if (recv_rv.has_error()) {
+	    std::cerr << "Reassembler encountered an error: "
+		      << recv_rv.error().message() << std::endl;
+	}
     } catch (E2SARException &e) {
 	std::cerr << "Unable to create reassembler: "
 		  << static_cast<std::string>(e) << std::endl;
 	exit(EXIT_FAILURE);
+    }
+    catch (CException& e) {
+	std::cerr << "Failed to create data sink: "
+		  << e.ReasonText() << std::endl;
+	return EXIT_FAILURE;
     }
     
     return EXIT_SUCCESS;
