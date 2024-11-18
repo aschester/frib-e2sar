@@ -280,54 +280,48 @@ recvEvents(Reassembler &r, /*CFileDataSink* pSink,*/ RingItemFactoryBase& factor
         if (recv_rv.value() == -1) { // Queue is empty
             continue;
 	}
+	
+	/////////////////////////////////////////////////////////////////////
+	// Data post-processing:
+	//
+	// The event buffer is a complete ring item. All the information we
+	// need to re-form the ring item on this end can be parsed from the
+	// ring item's header and body header. We extract the body size based
+	// on the remaining size after the header sizes are subtracted and
+	// then do byte-by-byte copy of the buffer into the ring item body.
+	///
 
-	// Data post-processing. The event buffer is a complete ring item.
-
-	u_int8_t* p = evtBuf;
+	u_int8_t* p = evtBuf;      // Pointer to first byte of evtBuf.
+	int bodySize = evtBufSize; // In bytes.
+	
 	auto pHdr = reinterpret_cast<RingItemHeader*>(p);
 	p += sizeof(RingItemHeader);
+	bodySize -= sizeof(RingItemHeader);
+	
 	auto pBodyHdr = reinterpret_cast<BodyHeader*>(p);
-	p += pBodyHdr->s_size; // 20 or sizeof(uint32_t)
+	p += pBodyHdr->s_size; // 20 or at most sizeof(uint32_t) if no bHdr?
+	bodySize -= pBodyHdr->s_size;
 
-	if(pHdr->s_type == PHYSICS_EVENT) {
-	    std::unique_ptr<CRingItem> pItem(
-		factory.makeRingItem(pHdr->s_type, pBodyHdr->s_timestamp,
-				     pBodyHdr->s_sourceId, MAX_BODY,
-				     pBodyHdr->s_barrier)
-		);
-	    u_int8_t* pBody = reinterpret_cast<u_int8_t*>(
-		pItem->getBodyCursor()
-		);
-	    int bodySize = evtBufSize - sizeof(RingItemHeader)
-		- pBodyHdr->s_size;
-	    memcpy(pBody, p, bodySize);
-	    pBody += bodySize;	    
-	    pItem->setBodyCursor(pBody);
-	    pItem->updateSize();
-	    
-	    std::cout << pItem->toString() << std::endl;
-	}
+	std::unique_ptr<CRingItem> pItem(
+	    factory.makeRingItem(pHdr->s_type, MAX_BODY)
+	    );
+	if (pBodyHdr->s_size > sizeof(uint32_t)) {
+	    pItem->setBodyHeader(pBodyHdr->s_timestamp,
+				 pBodyHdr->s_sourceId,
+				 pBodyHdr->s_barrier);
+	}	
+	u_int8_t* pBody = reinterpret_cast<u_int8_t*>(pItem->getBodyCursor());
+	memcpy(pBody, p, bodySize);
+	pBody += bodySize;	    
+	pItem->setBodyCursor(pBody);
+	pItem->updateSize();
 		
 	if (debug) {
 	    std::cout << "Receive event:" << std::endl;
 	    std::cout << "\tevtNumber:  " << evtNum << std::endl;
 	    std::cout << "\tdataId:     " << dataId << std::endl;
 	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
-
-	    std::cout << "Header:" << std::endl;
-	    std::cout << "\tsize: " << pHdr->s_size
-		      << "\n\ttype: " << pHdr->s_type
-		      << std::endl;
-	    std::cout << "Body header with size: " << pBodyHdr->s_size
-		      << std::endl;
-	    if (pBodyHdr->s_size > sizeof(uint32_t)) {
-		std::cout << "\ttimestamp: " << pBodyHdr->s_timestamp
-			  << "\n\tsourceId: " << pBodyHdr->s_sourceId
-			  << "\n\tbarrier: " << pBodyHdr->s_barrier
-			  << std::endl;
-	    } else {
-		std::cout << "\tEmpty body header" << std::endl;
-	    }
+	    std::cout << pItem->toString() << std::endl;
 	}
 		
 	// Cleanup:

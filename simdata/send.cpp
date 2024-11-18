@@ -292,7 +292,7 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents, size_t evtBufSize,
 
 	EventNum_t evtNumber = UINT64_MAX;
 	u_int16_t dataId     = 0;
-	auto evtBufSize      = pItem->size();
+	uint32_t evtBufSize      = pItem->size();
 	u_int16_t entropy    = 0;
 	
 	if (pItem->hasBodyHeader()) {
@@ -307,10 +307,7 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents, size_t evtBufSize,
 	    std::cout << "\tevtNumber:  " << evtNumber << std::endl;
 	    std::cout << "\tdataId:     " << dataId << std::endl;
 	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
-	    std::cout << "toString():" << std::endl;
 	    std::cout << pItem->toString() << std::endl;
-	    std::cout << "byte dump:" << std::endl;
-	    dumpBuffer(evtBuf, evtBufSize);
 	}
 	    
    	auto sendq_rv = s.addToSendQueue(evtBuf, evtBufSize, evtNumber, dataId,
