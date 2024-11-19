@@ -10,32 +10,40 @@
      Authors:
              Ron Fox
              Giordano Cerriza
+	     Aaron Chester
 	     FRIB
 	     Michigan State University
 	     East Lansing, MI 48824-1321
 */
+
 #ifndef DATASOURCE_H
 #define DATASOURCE_H
 
-/** @file  DataSource.h
- *  @brief Works with factories to provide a data source for undifferntiaed ring items.
- * @note Abstract base class for FdDataSource, StreamDataSource and RingDataSource
+/** 
+ * @file DataSource.h
+ * @brief Works with factories to provide a data source for undifferentiated 
+ *        ring items.
+ * @note Abstract base class for FdDataSource, StreamDataSource
  */
 
 namespace ufmt {
     class CRingItem;
     class RingItemFactoryBase;
 }
+
 using namespace ufmt;
+
 /**
  * @class DataSource
- *    Pure abstract data source which uses a factory's ring item getters to
- *    provide ring item from a data source.  Since the factory provides this,
- *    we'll need concrete classes:
- *    - FdDataSource - give data from a file descriptor.
- *    - StreamDataSource -give data from a stream.
- *    - RingDataSource -give data from a ringbuffer.
+ * @brief Abstract data source base class.
+ * @details
+ * Pure abstract data source which uses a factory's ring item getters to
+ * provide ring item from a data source. Since the factory provides this,
+ * we'll need concrete classes:
+ * - FdDataSource - give data from a file descriptor.
+ * - StreamDataSource - give data from a stream.
  */
+
 class DataSource {
 protected:
     RingItemFactoryBase* m_pFactory;
@@ -45,6 +53,5 @@ public:
     virtual CRingItem* getItem() = 0;
     void setFactory(RingItemFactoryBase* pFactory);
 };
-
 
 #endif

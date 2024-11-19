@@ -10,29 +10,32 @@
      Authors:
              Ron Fox
              Giordano Cerriza
+	     Aaron Chester
 	     FRIB
 	     Michigan State University
 	     East Lansing, MI 48824-1321
 */
+
 #ifndef STREAMDATASOURCE_H
 #define STREAMDATASOURCE_H
-/** @file:  StreamDataSource.h
- *  @brief: Defines a class that gets ring items from a stream.
- */
-#include "DataSource.h"
-#include <istream>
 
-using namespace ufmt;
+/** 
+ * @file StreamDataSource.h
+ * @brief Defines a class that gets ring items from a stream.
+ */
+
+#include "DataSource.h"
+
+#include <istream>
 
 class StreamDataSource : public DataSource
 {
 private:
     std::istream& m_str;
 public:
-    StreamDataSource(RingItemFactoryBase* pFactory, std::istream& str);
+    StreamDataSource(ufmt::RingItemFactoryBase* pFactory, std::istream& str);
     virtual ~StreamDataSource();
     virtual CRingItem* getItem();
 };
-
 
 #endif

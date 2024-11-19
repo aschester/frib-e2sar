@@ -10,25 +10,30 @@
      Authors:
              Ron Fox
              Giordano Cerriza
+	     Aaron Chester
 	     FRIB
 	     Michigan State University
 	     East Lansing, MI 48824-1321
 */
 
-/** @file:  StreamDataSource.cpp
- *  @brief:  Implement the stream data source
+/** 
+ * @file StreamDataSource.cpp
+ * @brief Implement the stream data source.
  */
+
 #include "StreamDataSource.h"
+
 #include <RingItemFactoryBase.h>
+
 using namespace ufmt;
 
 /**
  * constructor
- *    @param pFactory - factory for ring items.
- *    @param str     - references stream from which to get ring items.
+ * @param pFactory Factory for ring items.
+ * @param str References stream from which to get ring items.
  */
-
-StreamDataSource::StreamDataSource(RingItemFactoryBase* pFactory, std::istream& str) :
+StreamDataSource::StreamDataSource(RingItemFactoryBase* pFactory,
+				   std::istream& str) :
     DataSource(pFactory), m_str(str)
 {}
 
@@ -39,7 +44,7 @@ StreamDataSource::~StreamDataSource() {}
 
 /**
  * getItem
- *  @return CRingItem*  - pointer to the next ring item from the stream.  null if none.
+ * @return Pointer to the next ring item from the stream. nullptr if none.
  */
 CRingItem*
 StreamDataSource::getItem()

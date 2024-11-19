@@ -1,3 +1,19 @@
+/*
+    This software is Copyright by the Board of Trustees of Michigan
+    State University (c) Copyright 2015
+
+    You may use this software under the terms of the GNU public license
+    (GPL).  The terms of this license are described at:
+
+     http://www.gnu.org/licenses/gpl.txt
+
+     Author:
+             Aaron Chester
+             FRIB
+             Michigan State University
+             East Lansing, MI 48824-1321
+*/
+
 /** 
  * @file recv.cpp
  * @brief Simple receive with no load balancer.
@@ -19,32 +35,37 @@
 #include <DataFormat.h>
 #include <RingItemFactoryBase.h>
 
-// These are headers for the abstrct ring items we can get back from the
-// factory. As new ring items are added this set of #include's must be
-// updated as well as any processing steps.
+// // These are headers for the abstrct ring items we can get back from the
+// // factory. As new ring items are added this set of #include's must be
+// // updated as well as any processing steps.
 
 #include <CRingItem.h>
-#include <CAbnormalEndItem.h>
-#include <CDataFormatItem.h>
-#include <CGlomParameters.h>
-#include <CPhysicsEventItem.h>
-#include <CRingFragmentItem.h>
-#include <CRingPhysicsEventCountItem.h>
-#include <CRingScalerItem.h>
-#include <CRingTextItem.h>
-#include <CRingStateChangeItem.h>
-#include <CUnknownFragment.h>
+// #include <CAbnormalEndItem.h>
+// #include <CDataFormatItem.h>
+// #include <CGlomParameters.h>
+// #include <CPhysicsEventItem.h>
+// #include <CRingFragmentItem.h>
+// #include <CRingPhysicsEventCountItem.h>
+// #include <CRingScalerItem.h>
+// #include <CRingTextItem.h>
+// #include <CRingStateChangeItem.h>
+// #include <CUnknownFragment.h>
 
 // Other NSCLDAQ headers:
 
-//#include <CDataSink.h>
-//#include <CFileDataSink.h>
 #include <Exception.h>
+
+// Project headers:
+
+#include "CDataSink.h"
+#include "CFileDataSink.h"
+#include "EjfatUtilities.h"
 
 namespace po = boost::program_options;
 namespace pt = boost::posix_time;
 using namespace e2sar;
 using namespace ufmt;
+using namespace e2sarUtils; // Our utilities
 
 const size_t MAX_BODY = 8192; // Largest ring item body in bytes
 
@@ -53,19 +74,13 @@ const size_t MAX_BODY = 8192; // Largest ring item body in bytes
 bool threadsRunning(true);
 u_int16_t reportThreadSleepMs{2000}; // 2 second maximum
 Reassembler* reasPtr{nullptr};
+CDataSink* sinkPtr{nullptr};
 
-void
-dumpBuffer(u_int8_t* buf, size_t bytes) {
-    std::cout << "------------------------------------------" << std::endl;
-    for (auto i = 0; i < bytes; i++) {
-	if (i != 0 && i%8 == 0) {
-	    printf("\n");
-	}
-	printf("%02x ", (unsigned)buf[i]);
-    }
-    std::cout << std::dec << std::endl;
-}
-
+/**
+ * @brief Handle interrupt and shutdown nicely.
+ * @note Re-raises default interrupt signal at end. Should clean up, close 
+ *   files, etc.
+ */
 void
 ctrlCHandler(int sig) 
 {
@@ -84,12 +99,18 @@ ctrlCHandler(int sig)
     boost::chrono::milliseconds duration(1000);
     boost::this_thread::sleep_for(duration);
 
-    // Re-raise the signal and invoke default behavior:
+    // Re-raise the signal and invoke default behavior, which should close
+    // our open data sink:
     
     signal(sig, SIG_DFL);
     raise(sig);    
 }
 
+/**
+ * @brief Parse the command line variables and return the map.
+ * 
+ * @return Variables map
+ */
 po::variables_map
 getOpts(int ac, char* av[])
 {
@@ -110,9 +131,9 @@ getOpts(int ac, char* av[])
 	("port",
 	 po::value<u_int16_t>()->default_value(10000),
 	 "starting UDP port number on which receiver listens.")
-	// ("sink,S",
-	//  po::value<std::string>()->required(),
-	//  "path to output file data sink (*not* a URI)")
+	("sink,S",
+	 po::value<std::string>()->required(),
+	 "path to output file data sink (*not* a URI)")
 	("preferV6",
 	 po::value<bool>()->default_value(false),
 	 "prefer IPv6 over IPv4")
@@ -137,10 +158,12 @@ getOpts(int ac, char* av[])
 
 /**
  * @brief Map the version we get from the command line to a factory version.
+ *
  * @param fmtIn Format the user requested.
+ * 
  * @throw std::invalid_argument Bad format version
+ * 
  * @return Factory version ID (from the enum).
- * @note We should never throw because gengetopt will enforce the enum.
  */
 FormatSelector::SupportedVersions
 mapVersion(int fmtIn)
@@ -157,76 +180,8 @@ mapVersion(int fmtIn)
     }
 }
 
-EjfatURI
-getURI(const po::variables_map& opts, const EjfatURI::TokenType& tt,
-       const bool preferV6=false)
-{
-    auto uri_rv = (
-	opts.count("uri") ?
-	EjfatURI::getFromString(opts["uri"].as<std::string>(), tt, preferV6)
-	: EjfatURI::getFromEnv("EJFAT_URI"s, tt, preferV6)
-	);	
-    if (uri_rv.has_error())
-    {
-	std::cerr << "Error in parsing URI from command-line: "s
-	    + uri_rv.error().message() << std::endl;
-	exit(EXIT_FAILURE);
-    }
-    
-    return uri_rv.value();
-}
-
-Reassembler::ReassemblerFlags
-getFlags(const po::variables_map& opts)
-{
-    auto flags_rv = Reassembler::ReassemblerFlags::getFromINI(
-	opts["config-file"].as<std::string>()
-	);
-    if (flags_rv.has_error()) {
-	std::cerr << "Error reading configuration file: "s
-	    + flags_rv.error().message() << std::endl;
-	exit(EXIT_FAILURE);
-    }
-
-    auto flags = flags_rv.value();
-    
-    // Print out some info about the flags:
-
-    std::cout << "Control plane will be "
-	      << (flags.useCP ? "ON" : "OFF") << std::endl;
-    std::cout << (flags.useCP ?
-		  "*** Make sure the LB has been reserved and the URI "
-		  "reflects the reserved instance information."
-		  : "*** Make sure the URI reflects proper data "
-		  "address, other parts are ignored.") << std::endl;
-    
-    return flags;
-}
-
-void
-printFlags(const Reassembler::ReassemblerFlags& flags)
-{
-    std::cout << "Reassembler flags:\n";
-    std::cout <<"\tuseCP\t\t" << flags.useCP << std::endl;
-    std::cout <<"\tuseHostAddress\t" << flags.useHostAddress << std::endl;
-    std::cout <<"\tperiod_ms\t" << flags.period_ms << std::endl;
-    std::cout <<"\tvalidateCert\t" << flags.validateCert << std::endl;
-    std::cout <<"\tKi, Kp, Kd\t" << flags.Ki << ", " << flags.Kp
-	      << ", " << flags.Kd << std::endl;
-    std::cout <<"\tsetPoint\t" << flags.setPoint << std::endl;
-    std::cout <<"\tepoch_ms\t" << flags.epoch_ms << std::endl;
-    std::cout <<"\tportRange\t" << flags.portRange << std::endl;
-    std::cout <<"\twithLBHeader\t" << flags.withLBHeader << std::endl;
-    std::cout <<"\teventTimeout_ms\t" << flags.eventTimeout_ms << std::endl;
-    std::cout <<"\trcvSocketBufSize\t" << flags.rcvSocketBufSize
-	      << " (bytes)" << std::endl;
-    std::cout <<"\tweight\t\t" << flags.weight << std::endl;
-    std::cout <<"\tmin_factor\t" << flags.min_factor << std::endl;
-    std::cout <<"\tmax_factor\t" << flags.max_factor << std::endl;
-}
-
 result<int>
-recvEvents(Reassembler &r, /*CFileDataSink* pSink,*/ RingItemFactoryBase& factory,
+recvEvents(Reassembler &r, CDataSink* pSink, RingItemFactoryBase& factory,
 	   int durationSec, bool debug=false) {
 
     std::cout << "Receiving on ports " << r.get_recvPorts().first
@@ -323,6 +278,8 @@ recvEvents(Reassembler &r, /*CFileDataSink* pSink,*/ RingItemFactoryBase& factor
 	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
 	    std::cout << pItem->toString() << std::endl;
 	}
+
+	pSink->putItem(*pItem.get());
 		
 	// Cleanup:
 	
@@ -392,12 +349,12 @@ main(int argc, char* argv[])
 	// Configure data sink
 	///
 
-	FormatSelector::SupportedVersions version
-	    = mapVersion(opts["nscldaq-version"].as<int>());
+	int daqVersion = opts["nscldaq-version"].as<int>();
+	FormatSelector::SupportedVersions version = mapVersion(daqVersion);
 	auto& factory = FormatSelector::selectFactory(version);
 	
-	//auto name = opts["sink"].as<std::string>();
-	//std::unique_ptr<CFileDataSink> pSink(new CFileDataSink(name));
+	auto name = opts["sink"].as<std::string>();
+	std::unique_ptr<CFileDataSink> pSink(new CFileDataSink(name));
 	
 	/////////////////////////////////////////////////////////////////////
 	// Configure E2SAR
@@ -410,13 +367,20 @@ main(int argc, char* argv[])
 	auto port = opts["port"].as<u_int16_t>();
 	int durationSec = 0;  // Receive duration, 0 is forever
 	size_t numThreads(1); // Receiver threads
-	auto flags = getFlags(opts);
-	auto uri = getURI(opts, tt, preferV6);
-	bool debug = opts.count("debug");    
+	bool debug = opts.count("debug");
+	std::string uri_s("");
+	std::string configFile(opts["config-file"].as<std::string>());
+
+	if (opts.count("uri")) {
+	    uri_s = opts["uri"].as<std::string>();
+	}
+	
+	auto flags = getReassemblerFlagsFromINI(configFile);
+	auto uri = getURI(uri_s, tt, preferV6);
 
 	if (debug) {
 	    std::cout << "Using E2SAR version: " << get_Version() << std::endl;
-	    printFlags(flags);
+	    printReassemblerFlags(flags);
 	    std::cout << "Using URI: " << uri.to_string() << std::endl;
 	}
     
@@ -428,7 +392,8 @@ main(int argc, char* argv[])
 	Reassembler reas(uri, ip, port, numThreads, flags);
 	reasPtr = &reas;
 	boost::thread statsThread(&recvStatsThread, &reas);
-	auto recv_rv = recvEvents(reas, /*pSink.get(),*/ factory, durationSec, debug);
+	auto recv_rv = recvEvents(reas, pSink.get(), factory, durationSec,
+				  debug);
 	if (recv_rv.has_error()) {
 	    std::cerr << "Reassembler encountered an error: "
 		      << recv_rv.error().message() << std::endl;

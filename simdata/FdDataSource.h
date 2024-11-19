@@ -10,16 +10,20 @@
      Authors:
              Ron Fox
              Giordano Cerriza
+	     Aaron Chester
 	     FRIB
 	     Michigan State University
 	     East Lansing, MI 48824-1321
 */
+
 #ifndef FDDATASOURCE_H
 #define FDDATASOURCE_H
-/** @file:  FdDataSource.cpp
- *  @brief: Data source of undifferentiated ring items from a file descriptor
- *  
+
+/** 
+ * @file FdDataSource.cpp
+ * @brief Data source of undifferentiated ring items from a file descriptor
  */
+
 #include "DataSource.h"
 
 using namespace ufmt;
@@ -27,7 +31,7 @@ using namespace ufmt;
 class FdDataSource : public DataSource
 {
 private:
-    int m_fd;                         // File descrpitor data source.
+    int m_fd; //!< File descrpitor data source.
 public:
     FdDataSource(RingItemFactoryBase* pFactory, int fd);
     virtual ~FdDataSource();

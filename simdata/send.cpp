@@ -1,3 +1,19 @@
+/*
+    This software is Copyright by the Board of Trustees of Michigan
+    State University (c) Copyright 2015
+
+    You may use this software under the terms of the GNU public license
+    (GPL).  The terms of this license are described at:
+
+     http://www.gnu.org/licenses/gpl.txt
+
+     Author:
+             Aaron Chester
+             FRIB
+             Michigan State University
+             East Lansing, MI 48824-1321
+*/
+
 /** 
  * @file send.cpp
  * @brief Send simulated DDAS data through E2SAR.
@@ -40,17 +56,19 @@
 #include <URL.h>
 #include <Exception.h>
 
+// Project headers:
+
 #include "DataSource.h"
 #include "FdDataSource.h"
 #include "StreamDataSource.h"
+#include "EjfatUtilities.h"
 
 namespace po = boost::program_options;
 using namespace e2sar;
 using namespace ufmt;
+using namespace e2sarUtils; // Our utilities
 
 // Prepare a pool. To avoid locking the pool we use the return queue.
-// The boost::lockfree::queue is a thread-safe, lock- and mutex-free queue
-// that instead require atomic operations:
 
 boost::pool<> *evtBufPool;
 boost::lockfree::queue<u_int8_t*> evtBufQueue{10000};
@@ -62,18 +80,11 @@ Segmenter* segPtr{nullptr};
 LBManager* lbmPtr{nullptr};       // nullptr if CP is not enabled
 std::vector<std::string> senders; // Empty if CP is not enabled
 
-void
-dumpBuffer(u_int8_t* buf, size_t bytes) {
-    std::cout << "------------------------------------------" << std::endl;
-    for (auto i = 0; i < bytes; i++) {
-	if (i != 0 && i%8 == 0) {
-	    printf("\n");
-	}
-	printf("%02x ", (unsigned)buf[i]);
-    }
-    std::cout << std::dec << std::endl;
-}
-
+/**
+ * @brief Handle interrupt and shutdown nicely.
+ * @note Re-raises default interrupt signal at end. Should clean up, close 
+ *   files, etc.
+ */
 void
 ctrlCHandler(int sig) 
 {
@@ -104,6 +115,11 @@ ctrlCHandler(int sig)
     raise(sig);    
 }
 
+/**
+ * @brief Parse the command line variables and return the map.
+ * 
+ * @return Variables map
+ */
 po::variables_map
 getOpts(int ac, char* av[])
 {   
@@ -147,76 +163,31 @@ getOpts(int ac, char* av[])
     return vm;
 }
 
-EjfatURI
-getURI(const po::variables_map& opts, const EjfatURI::TokenType& tt,
-       const bool preferV6=false)
+/**
+ * @brief Map the version we get from the command line to a factory version.
+ *
+ * @param fmtIn Format the user requested.
+ * 
+ * @throw std::invalid_argument Bad format version
+ * 
+ * @return Factory version ID (from the enum).
+ */
+FormatSelector::SupportedVersions
+mapVersion(int fmtIn)
 {
-    auto uri_rv = (
-	opts.count("uri") ?
-	EjfatURI::getFromString(opts["uri"].as<std::string>(), tt, preferV6)
-	: EjfatURI::getFromEnv("EJFAT_URI"s, tt, preferV6)
-	);	
-    if (uri_rv.has_error())
-    {
-	std::cerr << "Error in parsing URI from command-line: "s
-	    + uri_rv.error().message() << std::endl;
-	exit(EXIT_FAILURE);
+    switch (fmtIn) {
+    case 12:
+	return FormatSelector::v12;
+    case 11:
+	return FormatSelector::v11;
+    case 10:
+	return FormatSelector::v10;
+    default:
+	throw std::invalid_argument("Invalid DAQ format version specifier");
     }
-    
-    return uri_rv.value();
 }
 
-Segmenter::SegmenterFlags
-getFlags(const po::variables_map& opts)
-{
-    auto flags_rv = Segmenter::SegmenterFlags::getFromINI(
-	opts["config-file"].as<std::string>()
-	);
-    if (flags_rv.has_error()) {
-	std::cerr << "Error reading configuration file: "s
-	    + flags_rv.error().message() << std::endl;
-	exit(EXIT_FAILURE);
-    }
-
-    auto flags = flags_rv.value();
-    
-    // Print out some info about the flags:
-    
-    std::cout << "Control plane                "
-	      << (flags.useCP ? "ON" : "OFF") << std::endl;
-    std::cout << "Event rate reporting in Sync "
-	      << (flags.zeroRate ? "OFF" : "ON") << std::endl;
-    std::cout << "Using usecs as event numbers "
-	      << (flags.usecAsEventNum ? "ON" : "OFF") << std::endl;
-    std::cout << "Number of send sockets:      "
-	      << flags.numSendSockets << std::endl;
-    std::cout << (flags.useCP ?
-		  "*** Make sure the LB has been reserved and the URI "
-		  "reflects the reserved instance information."
-		  : "*** Make sure the URI reflects proper data "
-		  "address, other parts are ignored.") << std::endl;
-    
-    return flags;
-}
-
-void
-printFlags(const Segmenter::SegmenterFlags& flags)
-{
-    std::cout << "Segmenter flags:\n";
-    std::cout << "\tdpV6\t\t" << flags.dpV6 << std::endl;
-    std::cout << "\tzeroCopy\t" << flags.zeroCopy << std::endl;
-    std::cout << "\tconnectedSocket\t" << flags.connectedSocket << std::endl;
-    std::cout << "\tuseCP\t\t" << flags.useCP << std::endl;
-    std::cout << "\tzeroRate\t" << flags.zeroRate << std::endl;
-    std::cout << "\tusecAsEventNum\t" << flags.usecAsEventNum << std::endl;
-    std::cout << "\tsyncPeriodMs\t" << flags.syncPeriodMs << std::endl;
-    std::cout << "\tsyncPeriods\t" << flags.syncPeriods << std::endl;
-    std::cout << "\tmtu\t\t" << flags.mtu << " (bytes)" << std::endl;
-    std::cout << "\tnumSendSockets\t" << flags.numSendSockets << std::endl;
-    std::cout << "\tsndSockBufSize\t" << flags.sndSocketBufSize << " (bytes)"
-	      << std::endl;
-}
-
+/** @brief Callback function to return a buffer to the pool */
 void
 freeBuffer(boost::any a) 
 {
@@ -224,8 +195,22 @@ freeBuffer(boost::any a)
     evtBufQueue.push(p);
 }
 
+/**
+ * @breif Add data to the send queue and send it.
+ *
+ * @param s References our segmenter instance
+ * @param pSource Pointer to data source where we get ring items
+ * @param nEvents Number of events to send
+ * @param evtBufSize Size of each event buffer, must be big enough to hold a 
+ *   single ring item
+ * @param rateGbps Send rate in Gbps (optional, default=1.0)
+ * @param debug Show debugging output (optional, default=false)
+ *
+ * @return EXIT_SUCCESS if successful, E2SAR error otherwise
+ */
 result<int>
-sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents, size_t evtBufSize, float rateGbps=1.0, bool debug=false)
+sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
+	   size_t evtBufSize, float rateGbps=1.0, bool debug=false)
 {
     // Convert bit rate to event rate. Sleep at least 1 us between sends:
     
@@ -292,7 +277,7 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents, size_t evtBufSize,
 
 	EventNum_t evtNumber = UINT64_MAX;
 	u_int16_t dataId     = 0;
-	uint32_t evtBufSize      = pItem->size();
+	uint32_t evtBufSize  = pItem->size();
 	u_int16_t entropy    = 0;
 	
 	if (pItem->hasBodyHeader()) {
@@ -361,48 +346,25 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents, size_t evtBufSize,
 }
 
 /**
- * @brief Map the version we get from the command line to a factory version.
- * @param fmtIn Format the user requested.
- * @throw std::invalid_argument Bad format version
- * @return Factory version ID (from the enum).
- * @note We should never throw because gengetopt will enforce the enum.
- */
-FormatSelector::SupportedVersions
-mapVersion(int fmtIn)
-{
-    switch (fmtIn) {
-    case 12:
-	return FormatSelector::v12;
-    case 11:
-	return FormatSelector::v11;
-    case 10:
-	return FormatSelector::v10;
-    default:
-	throw std::invalid_argument("Invalid DAQ format version specifier");
-    }
-}
-
-/**
  * @brief Parse the URI of the source and based on the parse create the 
  * underlying connection. Create the correct concrete instance of DataSource 
  * given all that.
+ * 
  * @param pFactory Pointer to the ring item factory to use.
  * @param strUrl   String URI of the connection.
+ * 
  * @throw std::invalid_argument If a ringbuffer data source is requested.
  *   The unified format library is incorporated into the NSCLDAQ, but does
  *   not have NSCLDAQ support enabled as its installed first.
+ * 
  * @return Dynamically allocated data source.
+ *
+ * @note (ASC 11/19/24): Ringbuffer data sources not currently supported.
+ *   If needed, create a pipe to read from stdin.
  */
 DataSource*
 makeDataSource(RingItemFactoryBase* pFactory, const std::string& strUrl)
 {
-    /////////////////////////////////////////////////////////////////////////
-    ///////////// IMPORTANT NOTE:
-    /////////////     This function is copied from ddasdumper and does not
-    /////////////     support ringbuffer data sources
-    /////////////
-    
-    
     // Special case the url is just "-" then it's stdin, a file descriptor
     // data source:
     
@@ -437,24 +399,31 @@ makeDataSource(RingItemFactoryBase* pFactory, const std::string& strUrl)
     }
 }
 
+/**
+ * @brief Send main. Create a data source and segmenter; send data.
+ */
 int
 main(int argc, char* argv[])
-{    
-    auto opts = getOpts(argc, argv); // Command-line options.
-    signal(SIGINT, ctrlCHandler); // Ctrl-C signal.
-    
+{
     try {
+	
+    	/////////////////////////////////////////////////////////////////////
+	// Read arguments and setup signal handler
+	///
+	
+	auto opts = getOpts(argc, argv); // Command-line options.
+	signal(SIGINT, ctrlCHandler); // Ctrl-C signal.
 
 	/////////////////////////////////////////////////////////////////////
 	// Configure data source
 	///
 
-	FormatSelector::SupportedVersions version
-	    = mapVersion(opts["nscldaq-version"].as<int>());
+	int daqVersion = opts["nscldaq-version"].as<int>();
+	FormatSelector::SupportedVersions version = mapVersion(daqVersion);
 	auto& factory = FormatSelector::selectFactory(version);
 
-	auto name = opts["source"].as<std::string>();
-	std::unique_ptr<DataSource> pSource(makeDataSource(&factory, name));
+	auto srcName = opts["source"].as<std::string>();
+	std::unique_ptr<DataSource> pSource(makeDataSource(&factory, srcName));
     
 	/////////////////////////////////////////////////////////////////////
 	// Configure E2SAR
@@ -468,20 +437,30 @@ main(int argc, char* argv[])
 
 	u_int32_t evtSourceId(0);
 	u_int16_t dataId(0);
-    
+	
 	size_t evtBufSize = opts["bufsize"].as<size_t>();
-	auto flags = getFlags(opts); // Call first, set IPv preference
-	auto uri = getURI(opts, tt, flags.dpV6);
-	size_t nEvents = 0; // 
+	size_t nEvents = 0;
+	std::string uri_s("");
+	bool debug = opts.count("debug");
+	float rateGbps = 1.0;
+	std::string configFile(opts["config-file"].as<std::string>());
+
+	// Override defaults if provided:
+
+	if (opts.count("uri")) {
+	    uri_s = opts["uri"].as<std::string>();
+	}
+	
 	if (opts.count("num")) {
 	    nEvents = opts["num"].as<size_t>();
-	}	    
-	bool debug = opts.count("debug");    
-	float rateGbps = 1.0;
+	}
+	
+	auto flags = getSegmenterFlagsFromINI(configFile); // Sets IpV6 pref.
+	auto uri = getURI(uri_s, tt, flags.dpV6);	    
     
 	if (debug) {
 	    std::cout << "Using E2SAR version: " << get_Version() << std::endl;
-	    printFlags(flags);
+	    printSegmenterFlags(flags);
 	    std::cout << "Using URI: " << uri.to_string() << std::endl;
 	    std::cout << "Sending " << nEvents << " events" << std::endl;
 	    std::cout << "Max buffer: " << evtBufSize << " bytes" << std::endl;
@@ -495,7 +474,8 @@ main(int argc, char* argv[])
 	
 	Segmenter seg(uri, dataId, evtSourceId, flags);
 	segPtr = &seg;
-	auto send_rv = sendEvents(seg, pSource.get(), nEvents, evtBufSize, rateGbps, debug);
+	auto send_rv = sendEvents(seg, pSource.get(), nEvents,
+				  evtBufSize, rateGbps, debug);
 	if (send_rv.has_error()) {
 	    std::cerr << "Segmenter encountered an error: "
 		      << send_rv.error().message() << std::endl;
