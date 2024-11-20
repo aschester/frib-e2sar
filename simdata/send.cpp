@@ -198,11 +198,11 @@ freeBuffer(boost::any a)
 /**
  * @breif Add data to the send queue and send it.
  *
- * @param s References our segmenter instance
- * @param pSource Pointer to data source where we get ring items
- * @param nEvents Number of events to send
+ * @param s References our segmenter instance.
+ * @param pSource Pointer to data source where we get ring items.
+ * @param nEvents Number of events to send.
  * @param evtBufSize Size of each event buffer, must be big enough to hold a 
- *   single ring item
+ *   single ring item.
  * @param rateGbps Send rate in Gbps (optional, default=1.0)
  * @param debug Show debugging output (optional, default=false)
  *
@@ -400,7 +400,7 @@ makeDataSource(RingItemFactoryBase* pFactory, const std::string& strUrl)
 }
 
 /**
- * @brief Send main. Create a data source and segmenter; send data.
+ * @brief Send main. Create a data source and Segmenter; send data.
  */
 int
 main(int argc, char* argv[])

@@ -161,7 +161,7 @@ getOpts(int ac, char* av[])
  *
  * @param fmtIn Format the user requested.
  * 
- * @throw std::invalid_argument Bad format version
+ * @throw std::invalid_argument Bad format version.
  * 
  * @return Factory version ID (from the enum).
  */
@@ -180,6 +180,17 @@ mapVersion(int fmtIn)
     }
 }
 
+/**
+ * @brief Receive and reassemble events.
+ *
+ * @param r References our Reassembler instance.
+ * @param pSink Pointer to the (for now always a file) data sink we write to.
+ * @param factory Factory for creating formatted ring items.
+ * @param durationSec Listening duration; if 0, listen forever.
+ * @param debug Enable debugging output.
+ *
+ * @return EXIT_SUCCESS if successful, E2SAR error otherwise.
+ */
 result<int>
 recvEvents(Reassembler &r, CDataSink* pSink, RingItemFactoryBase& factory,
 	   int durationSec, bool debug=false) {
@@ -290,6 +301,11 @@ recvEvents(Reassembler &r, CDataSink* pSink, RingItemFactoryBase& factory,
     return 0;
 }
 
+/**
+ * @brief Monitor for event reassembly.
+ *
+ * @param r Pointer to Reassembler.
+ */
 void
 recvStatsThread(Reassembler *r)
 {
@@ -336,7 +352,10 @@ recvStatsThread(Reassembler *r)
     }
 }
 
-
+/**
+ * @brief Receive main. Create a data sink and Reassembler; listen for data and
+ * write it to the sink.
+ */
 int
 main(int argc, char* argv[])
 {    
