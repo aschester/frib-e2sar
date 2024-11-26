@@ -12,8 +12,10 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 set(CMAKE_INSTALL_RPATH ${UFMT_LIB} ${NSCLDAQ_LIB})
 
 set(send_exec send_simdata)
-set(send_src send.cpp DataSource.cpp FdDataSource.cpp StreamDataSource.cpp)
-set(send_headers DataSource.h FdDataSource.h StreamDataSource.h)
+set(send_src send.cpp DataSource.cpp FdDataSource.cpp StreamDataSource.cpp
+  EjfatUtilities.cpp)
+set(send_headers DataSource.h FdDataSource.h StreamDataSource.h
+  EjfatUtilities.h)
 
 add_executable(${send_exec} ${send_src})
 target_include_directories(
@@ -39,8 +41,8 @@ target_link_libraries(
   )
 
 set(recv_exec recv_simdata)
-set(recv_src recv.cpp)
-set(recv_headers)
+set(recv_src recv.cpp CDataSink.cpp CFileDataSink.cpp EjfatUtilities.cpp)
+set(recv_headers CDataSink.h CFileDataSink.h EjfatUtilities.h)
 
 add_executable(${recv_exec} ${recv_src})
 target_include_directories(
@@ -62,7 +64,6 @@ target_link_libraries(
   ${UFMT_LIB}/libV12Format.so
   ${UFMT_LIB}/libAbstractFormat.so
   ${NSCLDAQ_LIB}/libException.so
-  ${NSCLDAQ_LIB}/libdaqio.so
   )
 
 install(FILES ${send_headers} DESTINATION include)

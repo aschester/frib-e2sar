@@ -10,37 +10,43 @@
      Authors:
              Ron Fox
              Giordano Cerriza
+	     Aaron Chester
 	     FRIB
 	     Michigan State University
 	     East Lansing, MI 48824-1321
 */
 
-/** @file:  FdDataSource.cpp
- *  @brief: Implementation of the file descriptor data source.
+/** 
+ * @file FdDataSource.cpp
+ * @brief Implementation of the file descriptor data source.
  */
+
 #include "FdDataSource.h"
+
 #include <RingItemFactoryBase.h>
+
 using namespace ufmt;
+
 /**
  * constructor
- * @param pFactory - pointer to the factory used to get items.
- * @param fd       - file descriptor open on the data source.
- *                   The caller owns this - we don't close it on destruction.
+ * @param pFactory Pointer to the factory used to get items.
+ * @param fd       File descriptor open on the data source.
+ *                 The caller owns this - we don't close it on destruction.
  */
 FdDataSource::FdDataSource(RingItemFactoryBase* pFactory, int fd) :
     DataSource(pFactory), m_fd(fd)
 {}
+
 /**
  * destructor
  */
 FdDataSource::~FdDataSource() {}
 
 /**
- *  getItem
- *     @return CRingItem* - undifferentiated ring item dynamically created.
- *                          nullptr if there's no more.
+ * getItem
+ * @return Undifferentiated ring item dynamically created. nullptr if there's 
+ *         no more.
  */
-
 CRingItem*
 FdDataSource::getItem()
 {

@@ -32,4 +32,8 @@ cmake --install . --prefix "/path/to/installation/dir"
 - Running programs with the `-h` option will describe how to use them.
 - Sensible defaults are set in most cases.
 - For codes using initialization files it is easy to switch between settings by pointing the code at a different config file at runtime.
-- Most codes will expect an EJFAT URI either passed as a command line or stored in an environment variable. Generally anything passed on the command line will override any preset settings. For testing I have generally set: `export EJFAT_URI="ejfat://mytoken@127.0.0.1:23456/lb/123?data=127.0.0.1:23457&sync=127.0.0.1:23458"`. The quotes on the string may be needed to prevent your shell from interpreting `&` as a shell command. For point-to-point reassembly, the receiver should listen on the data port, which is in this case 23457.
+- Most codes will expect an EJFAT URI either passed as a command line or stored in an environment variable. Generally anything passed on the command line will override any preset settings. For testing I usually take the second approach:
+
+`export EJFAT_URI="ejfat://mytoken@127.0.0.1:23456/lb/123?data=127.0.0.1:23457&sync=127.0.0.1:23458"`.
+
+The quotes on the string may be needed to prevent your shell from interpreting `&` as a shell command. For point-to-point reassembly, the receiver should listen on the data port, which is in this case 23457.
