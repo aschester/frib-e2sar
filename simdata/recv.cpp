@@ -35,21 +35,11 @@
 #include <DataFormat.h>
 #include <RingItemFactoryBase.h>
 
-// // These are headers for the abstrct ring items we can get back from the
-// // factory. As new ring items are added this set of #include's must be
-// // updated as well as any processing steps.
+// These are headers for the abstrct ring items we can get back from the
+// factory. As new ring items are added this set of #include's must be
+// updated as well as any processing steps.
 
 #include <CRingItem.h>
-// #include <CAbnormalEndItem.h>
-// #include <CDataFormatItem.h>
-// #include <CGlomParameters.h>
-// #include <CPhysicsEventItem.h>
-// #include <CRingFragmentItem.h>
-// #include <CRingPhysicsEventCountItem.h>
-// #include <CRingScalerItem.h>
-// #include <CRingTextItem.h>
-// #include <CRingStateChangeItem.h>
-// #include <CUnknownFragment.h>
 
 // Other NSCLDAQ headers:
 
@@ -66,8 +56,6 @@ namespace pt = boost::posix_time;
 using namespace e2sar;
 using namespace ufmt;
 using namespace e2sarUtils; // Our utilities
-
-const size_t MAX_BODY = 8192; // Largest ring item body in bytes
 
 // Other global config:
 
@@ -161,7 +149,7 @@ getOpts(int ac, char* av[])
  *
  * @param fmtIn Format the user requested.
  * 
- * @throw std::invalid_argument Bad format version.
+ * @throw std::invalid_argument Bad format version, including NSCLDAQ v10.
  * 
  * @return Factory version ID (from the enum).
  */
@@ -174,7 +162,7 @@ mapVersion(int fmtIn)
     case 11:
 	return FormatSelector::v11;
     case 10:
-	return FormatSelector::v10;
+	throw std::invalid_argument("NSCLDAQ 10 is not currently supported");
     default:
 	throw std::invalid_argument("Invalid DAQ format version specifier");
     }
@@ -190,21 +178,31 @@ mapVersion(int fmtIn)
  * @param debug Enable debugging output.
  *
  * @return EXIT_SUCCESS if successful, E2SAR error otherwise.
+ *
+ * @note (ASC 11/26/24): Not compatible with NSCLDAQ 10 at the moment. 
+ * The data unpacking from an arbitrary buffer containing a complete ring 
+ * item is complicated by the fact the body headers do not exist in v10. 
+ * Easiest approach is to leave as-is and assume nobody will ever try this 
+ * with v10 data. A more complete solution would entail switching the buffer
+ * unpacking method based on the DAQ version provided by the user.
  */
 result<int>
-recvEvents(Reassembler &r, CDataSink* pSink, RingItemFactoryBase& factory,
-	   int durationSec, bool debug=false) {
+recvEvents(Reassembler &r, Reassembler::ReassemblerFlags& flags,
+	   CDataSink* pSink, RingItemFactoryBase& factory, int durationSec,
+	   FormatSelector::SupportedVersions version, bool debug=false) {
 
     std::cout << "Receiving on ports " << r.get_recvPorts().first
 	      << ":" << r.get_recvPorts().second << std::endl;
 
-    // Received event information and receiver config:
-    
+    // Received event information and receiver config. We recycle the buffer
+    // with blocking calls to receive data. The extent of good data for a
+    // particular event is defined by evtBufSize. In theory evtBuf 
+
     u_int8_t*  evtBuf{nullptr}; // Event buffer
     size_t     evtBufSize;      // Event buffer size in bytes
     EventNum_t evtNum;          // Event number (typically timestamp)
     u_int16_t  dataId;          // Data Id (source Id or other)
-    u_int64_t  waitMs = 2000;   // Wait time in milliseconds
+    u_int64_t  waitMs = 1000;   // Wait time in milliseconds
 
     // We assume for now that the CP is disabled:
     
@@ -219,12 +217,13 @@ recvEvents(Reassembler &r, CDataSink* pSink, RingItemFactoryBase& factory,
     // Receive loop
     ///
     
-    while(true)
-    {
+    while(threadsRunning)
+    {	
 	// Blocking receive. Use getEvent() for non-blocking:
-
-        auto recv_rv = r.recvEvent(&evtBuf, &evtBufSize, &evtNum,
+	
+	auto recv_rv = r.recvEvent(&evtBuf, &evtBufSize, &evtNum,
 				   &dataId, waitMs);
+	//auto recv_rv = r.getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
         auto next = boost::chrono::steady_clock::now();
 
 	// If duration is set stop listening after that time and exit:
@@ -257,21 +256,29 @@ recvEvents(Reassembler &r, CDataSink* pSink, RingItemFactoryBase& factory,
 	// then do byte-by-byte copy of the buffer into the ring item body.
 	///
 
-	u_int8_t* p = evtBuf;      // Pointer to first byte of evtBuf.
-	int bodySize = evtBufSize; // In bytes.
+	u_int8_t* p = evtBuf;         // Pointer to first byte of evtBuf.
+	size_t bodySize = evtBufSize; // In bytes.
 	
 	auto pHdr = reinterpret_cast<RingItemHeader*>(p);
 	p += sizeof(RingItemHeader);
 	bodySize -= sizeof(RingItemHeader);
+
+	// Body headers exist starting with NSCLDAQ 11. Note that this section
+	// of code breaks compatibility with v10:
 	
 	auto pBodyHdr = reinterpret_cast<BodyHeader*>(p);
-	p += pBodyHdr->s_size; // 20 or at most sizeof(uint32_t) if no bHdr?
-	bodySize -= pBodyHdr->s_size;
+	size_t bodyHdrSize = pBodyHdr->s_size;
+	// v11 body header size is not self-inclusive if not present:	
+	if (bodyHdrSize == 0 && version == FormatSelector::v11) {
+	    bodyHdrSize = sizeof(uint32_t); // Inclusive size
+	}	
+	p += bodyHdrSize;
+	bodySize -= bodyHdrSize; // Whatever is left is the payload
 
 	std::unique_ptr<CRingItem> pItem(
-	    factory.makeRingItem(pHdr->s_type, MAX_BODY)
+	    factory.makeRingItem(pHdr->s_type, bodySize)
 	    );
-	if (pBodyHdr->s_size > sizeof(uint32_t)) {
+	if (bodyHdrSize > sizeof(uint32_t)) {
 	    pItem->setBodyHeader(pBodyHdr->s_timestamp,
 				 pBodyHdr->s_sourceId,
 				 pBodyHdr->s_barrier);
@@ -291,12 +298,12 @@ recvEvents(Reassembler &r, CDataSink* pSink, RingItemFactoryBase& factory,
 	}
 
 	pSink->putItem(*pItem.get());
-		
+
 	// Cleanup:
 	
-        delete evtBuf;
+	delete evtBuf;
 	evtBuf = nullptr;
-    }	
+    }
         
     return 0;
 }
@@ -340,12 +347,12 @@ recvStatsThread(Reassembler *r)
 		      << stats.get<5>() << std::endl;
 	}
 
-        std::cout << "\tEvents lost so far: ";
-        for(auto evt: lostEvents)
-        {
-            std::cout << "<" << evt.first << ":" << evt.second << "> ";
-        }
-        std::cout << std::endl;
+        // std::cout << "\tEvents lost so far: ";
+        // for(auto evt: lostEvents)
+        // {
+        //     std::cout << "<" << evt.first << ":" << evt.second << "> ";
+        // }
+        // std::cout << std::endl;
 
         auto until = now + boost::chrono::milliseconds(reportThreadSleepMs);
         boost::this_thread::sleep_until(until);
@@ -411,8 +418,8 @@ main(int argc, char* argv[])
 	Reassembler reas(uri, ip, port, numThreads, flags);
 	reasPtr = &reas;
 	boost::thread statsThread(&recvStatsThread, &reas);
-	auto recv_rv = recvEvents(reas, pSink.get(), factory, durationSec,
-				  debug);
+	auto recv_rv = recvEvents(reas, flags, pSink.get(), factory,
+				  durationSec, version, debug);
 	if (recv_rv.has_error()) {
 	    std::cerr << "Reassembler encountered an error: "
 		      << recv_rv.error().message() << std::endl;

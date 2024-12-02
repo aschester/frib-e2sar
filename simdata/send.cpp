@@ -140,6 +140,9 @@ getOpts(int ac, char* av[])
 	("bufsize,b",
 	 po::value<size_t>()->default_value(1024*1024),
 	 "event buffer size in bytes")
+	("send-rate,r",
+	 po::value<float>()->default_value(1),
+	 "Event send rate in Gbps")
 	("source,s",
 	 po::value<std::string>()->required(),
 	 "Input data URI (file or stream only)")
@@ -168,7 +171,7 @@ getOpts(int ac, char* av[])
  *
  * @param fmtIn Format the user requested.
  * 
- * @throw std::invalid_argument Bad format version
+ * @throw std::invalid_argument Bad format version, including NSCLDAQ v10.
  * 
  * @return Factory version ID (from the enum).
  */
@@ -181,7 +184,7 @@ mapVersion(int fmtIn)
     case 11:
 	return FormatSelector::v11;
     case 10:
-	return FormatSelector::v10;
+	throw std::invalid_argument("NSCLDAQ 10 is not currently supported");
     default:
 	throw std::invalid_argument("Invalid DAQ format version specifier");
     }
@@ -258,7 +261,7 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
     while (1) {	
 	// Get a buffer, either from the queue or by allocating a new one:
 
-	u_int8_t* evtBuf = nullptr;
+	u_int8_t* evtBuf{nullptr};
 	if (!evtBufQueue.pop(evtBuf)) {
 	    evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
 	}
@@ -275,10 +278,10 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 	// is the source Id. In the case no body header is present, the
 	// event timestamp is UINT64_MAX and the data Id is 0.
 
-	EventNum_t evtNumber = UINT64_MAX;
-	u_int16_t dataId     = 0;
-	uint32_t evtBufSize  = pItem->size();
-	u_int16_t entropy    = 0;
+	EventNum_t evtNumber  = UINT64_MAX;
+	u_int16_t  dataId     = 0;
+	uint32_t   evtBufSize = pItem->size();
+	u_int16_t  entropy    = 0;
 	
 	if (pItem->hasBodyHeader()) {
 	    evtNumber = pItem->getEventTimestamp();
@@ -296,7 +299,7 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 	}
 	    
    	auto sendq_rv = s.addToSendQueue(evtBuf, evtBufSize, evtNumber, dataId,
-				      entropy, &freeBuffer, evtBuf);
+					 entropy, &freeBuffer, evtBuf);
 	if (sendq_rv.has_error()) {
 	    std::cout << sendq_rv.error().message() << std::endl;
 	    continue;
@@ -324,7 +327,7 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 
     // Free the backlog of unused buffers:
 	
-    u_int8_t *item{nullptr};
+    u_int8_t* item{nullptr};
     while (evtBufQueue.pop(item)) {
 	evtBufPool->free(item);
     }
@@ -442,7 +445,7 @@ main(int argc, char* argv[])
 	size_t nEvents = 0;
 	std::string uri_s("");
 	bool debug = opts.count("debug");
-	float rateGbps = 1.0;
+	float rateGbps = opts["send-rate"].as<float>();
 	std::string configFile(opts["config-file"].as<std::string>());
 
 	// Override defaults if provided:
