@@ -23,6 +23,8 @@
 #include <cstddef>
 #include <string>
 #include <cstdint>
+#include <vector>
+#include <csignal>
 
 #include <boost/program_options.hpp>
 
@@ -80,16 +82,13 @@ Segmenter* segPtr{nullptr};
 LBManager* lbmPtr{nullptr};       // nullptr if CP is not enabled
 std::vector<std::string> senders; // Empty if CP is not enabled
 
-/**
- * @brief Handle interrupt and shutdown nicely.
- * @note Re-raises default interrupt signal at end. Should clean up, close 
- *   files, etc.
- */
 void
-ctrlCHandler(int sig) 
-{
+shutdown() {
     std::cout << "Stopping threads" << std::endl;
-
+    threadsRunning = false;
+    boost::chrono::milliseconds duration(1000);
+    boost::this_thread::sleep_for(duration);
+    
     if (segPtr != nullptr) {
         if (lbmPtr != nullptr) {
             std::cout << "Removing senders: ";
@@ -97,27 +96,34 @@ ctrlCHandler(int sig)
                 std::cout << s << " ";
             std::cout << std::endl;
             auto rmres = lbmPtr->removeSenders(senders);
-            if (rmres.has_error()) 
+            if (rmres.has_error()) {
                 std::cerr << "Unable to remove sender from list on exit: "
 			  << rmres.error().message() << std::endl;
+	    }
+	    delete lbmPtr;
         }
         segPtr->stopThreads();
+	delete segPtr;
     }
 
-    threadsRunning = false;
-    // Instead of join on the main thread??
-    boost::chrono::milliseconds duration(1000);
     boost::this_thread::sleep_for(duration);
+}
 
-    // Re-raise the signal and invoke default behavior:
-    
+/**
+ * @brief Handle interrupt and shutdown nicely.
+ * @note Re-raises default interrupt signal at end. Should clean up, close 
+ *   files, etc.
+ */
+void
+ctrlCHandler(int sig) 
+{    // Re-raise the signal and invoke default behavior:
+    shutdown();
     signal(sig, SIG_DFL);
     raise(sig);    
 }
 
 /**
  * @brief Parse the command line variables and return the map.
- * 
  * @return Variables map
  */
 po::variables_map
@@ -126,7 +132,7 @@ getOpts(int ac, char* av[])
     // Configure and parse command-line options:
     
     po::options_description od("Send command-line options");
-    auto opts = od.add_options()
+    od.add_options()
 	("help,h", "show command help")
 	("config-file,c",
 	 po::value<std::string>()->default_value("./segmenter_config.ini"),
@@ -143,6 +149,9 @@ getOpts(int ac, char* av[])
 	("send-rate,r",
 	 po::value<float>()->default_value(1),
 	 "Event send rate in Gbps")
+	("ip",
+	 po::value<std::string>()->default_value("127.0.0.1"),
+	 "IP address (IPv4 or IPv6) from which sender sends from")
 	("source,s",
 	 po::value<std::string>()->required(),
 	 "Input data URI (file or stream only)")
@@ -168,11 +177,8 @@ getOpts(int ac, char* av[])
 
 /**
  * @brief Map the version we get from the command line to a factory version.
- *
  * @param fmtIn Format the user requested.
- * 
  * @throw std::invalid_argument Bad format version, including NSCLDAQ v10.
- * 
  * @return Factory version ID (from the enum).
  */
 FormatSelector::SupportedVersions
@@ -200,7 +206,6 @@ freeBuffer(boost::any a)
 
 /**
  * @breif Add data to the send queue and send it.
- *
  * @param s References our segmenter instance.
  * @param pSource Pointer to data source where we get ring items.
  * @param nEvents Number of events to send.
@@ -208,7 +213,6 @@ freeBuffer(boost::any a)
  *   single ring item.
  * @param rateGbps Send rate in Gbps (optional, default=1.0)
  * @param debug Show debugging output (optional, default=false)
- *
  * @return EXIT_SUCCESS if successful, E2SAR error otherwise
  */
 result<int>
@@ -219,7 +223,7 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
     
     float eventRate{rateGbps*1000000000/(evtBufSize*8)};
     u_int64_t interEventSleepUsec{
-	static_cast<u_int64_t>(evtBufSize*8/(rateGbps * 1000))
+	static_cast<u_int64_t>(evtBufSize*8/(rateGbps*1000))
     };
     if (interEventSleepUsec == 0) { // Max send rate 1 MHz
 	interEventSleepUsec = 1;
@@ -239,6 +243,8 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
     
     auto open_rv = s.openAndStart();
     if (open_rv.has_error()) {
+	std::cerr << "Failed to start Segmenter: "
+		  << open_rv.error().message() << std::endl;
         return open_rv;
     }
 
@@ -258,22 +264,26 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
     // We run the send loop until we've sent all events or EOF:
     
     int remaining = nEvents; 
-    while (1) {	
+    while (1) {
+
 	// Get a buffer, either from the queue or by allocating a new one:
 
 	u_int8_t* evtBuf{nullptr};
 	if (!evtBufQueue.pop(evtBuf)) {
+	    // segfaulting here for some reason ?!?!?!
 	    evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
 	}
 
 	// Get the ring item we'll pack into this buffer and send:
 	
 	std::unique_ptr<::ufmt::CRingItem> pItem(pSource->getItem());
+	std::cout << pItem->type() << std::endl;
+	
 	if (!pItem.get()) { // End of source.
 	    break;
 	}
 	
-	// Extract information from the event copy it into the event buffer,
+	// Extract information from the event, copy it into the event buffer,
 	// and add it to the send queue. Event number is timestamp, data Id
 	// is the source Id. In the case no body header is present, the
 	// event timestamp is UINT64_MAX and the data Id is 0.
@@ -352,16 +362,12 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
  * @brief Parse the URI of the source and based on the parse create the 
  * underlying connection. Create the correct concrete instance of DataSource 
  * given all that.
- * 
  * @param pFactory Pointer to the ring item factory to use.
  * @param strUrl   String URI of the connection.
- * 
  * @throw std::invalid_argument If a ringbuffer data source is requested.
  *   The unified format library is incorporated into the NSCLDAQ, but does
  *   not have NSCLDAQ support enabled as its installed first.
- * 
  * @return Dynamically allocated data source.
- *
  * @note (ASC 11/19/24): Ringbuffer data sources not currently supported.
  *   If needed, create a pipe to read from stdin.
  */
@@ -447,6 +453,7 @@ main(int argc, char* argv[])
 	bool debug = opts.count("debug");
 	float rateGbps = opts["send-rate"].as<float>();
 	std::string configFile(opts["config-file"].as<std::string>());
+	std::string sendIP(opts["ip"].as<std::string>());
 
 	// Override defaults if provided:
 
@@ -467,13 +474,55 @@ main(int argc, char* argv[])
 	    std::cout << "Using URI: " << uri.to_string() << std::endl;
 	    std::cout << "Sending " << nEvents << " events" << std::endl;
 	    std::cout << "Max buffer: " << evtBufSize << " bytes" << std::endl;
-	}
+	}	
 
 	/////////////////////////////////////////////////////////////////////
 	// Instantiate and run Segmenter:
 	///
 
 	evtBufPool = new boost::pool<>{evtBufSize}; // For recycling buffers
+
+	// Configure control plane (if used):
+
+	if (flags.useCP) {
+	    senders.push_back(sendIP);
+
+	    // Create the instance of the load balancer.
+	    // validate certs = true, prefer host ipv addr = false:
+	    
+	    lbmPtr = new LBManager(uri, true, false);
+
+	    // Register senders:
+
+	    std::cout << "Adding senders to LB:\n";
+	    for (const auto& s: senders) {
+		std::cout << s << " ";
+	    }
+	    std::cout << std::endl;
+
+	    auto addSenders_rv = lbmPtr->addSenders(senders);
+
+	    if (addSenders_rv.has_error()) {
+		std::cerr << "Unable to add sender: "
+			  << addSenders_rv.error().message()
+			  << std::endl;
+		std::cerr << "Exiting...\n";
+		std::exit(EXIT_FAILURE);
+	    }
+	    
+	    if (debug) {		
+		auto uriString
+		    = lbmPtr->get_URI().to_string(EjfatURI::TokenType::session);
+		auto addrString = lbmPtr->get_AddrString();
+		auto lbId = lbmPtr->get_URI().get_lbId();
+		    
+		std::cout << "Getting LB status:" << std::endl;
+		std::cout << "\tContacting: " << uriString
+			  << " using address: " << addrString
+			  << std::endl;
+		std::cout << "\tLB ID: " << lbId << std::endl;
+	    }	    
+	}	
 	
 	Segmenter seg(uri, dataId, evtSourceId, flags);
 	segPtr = &seg;
@@ -484,14 +533,17 @@ main(int argc, char* argv[])
 		      << send_rv.error().message() << std::endl;
 	    exit(EXIT_FAILURE);
 	}
+
     }
     catch (std::invalid_argument& e) {
 	std::cerr << "Failed to create data source: " << e.what() << std::endl;
+	shutdown();
 	exit(EXIT_FAILURE);
     }
     catch (const E2SARException& e) {
 	std::cerr << "Unable to create segmenter: "
 		  << static_cast<std::string>(e) << std::endl;
+	shutdown();
 	exit(EXIT_FAILURE);
     }
     
