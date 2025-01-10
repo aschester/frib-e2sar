@@ -19,6 +19,8 @@
  * @brief Simple receive with or without load balancer.
  */
 
+/** @todo (ASC 1/9/25): Multiple threads for recv, see e2sar_perf.cpp. */
+
 #include <iostream>
 #include <cstddef>
 #include <string>
@@ -109,8 +111,8 @@ getOpts(int ac, char* av[])
 {
     // Configure and parse command-line options:
      
-    po::options_description od("Send command-line options");
-    auto opts = od.add_options()
+    po::options_description od("Receive command-line options");
+    od.add_options()
 	("help,h", "show command help")
 	("config-file,c",
 	 po::value<std::string>()->default_value("./reassembler_config.ini"),
@@ -119,10 +121,10 @@ getOpts(int ac, char* av[])
 	 po::value<std::string>(),
 	 "URI from the command line to override EJFAT_URI envvar")
 	("ip",
-	 po::value<std::string>()->default_value("127.0.0.1"),
+	 po::value<std::string>()->default_value("35.11.82.130"),
 	 "IP address (IPv4 or IPv6) on which receiver listens.")
 	("port",
-	 po::value<u_int16_t>()->default_value(19022),
+	 po::value<u_int16_t>()->default_value(23457),
 	 "starting UDP port number on which receiver listens.")
 	("sink,S",
 	 po::value<std::string>()->required(),
@@ -188,12 +190,14 @@ mapVersion(int fmtIn)
 result<int>
 recvEvents(Reassembler &r, Reassembler::ReassemblerFlags& flags,
 	   CDataSink* pSink, RingItemFactoryBase& factory, int durationSec,
-	   FormatSelector::SupportedVersions version, bool debug=false) {
+	   FormatSelector::SupportedVersions version, bool debug=false)
+{
        
     std::cout << "Receiving on ports " << r.get_recvPorts().first
 	      << ":" << r.get_recvPorts().second << std::endl;
 
-// register the worker (will be NOOP if withCP is set to false)
+    // Register the worker (will be NOOP if withCP is set to false):
+    
     auto hostname_rv = NetUtil::getHostName();
     if (hostname_rv.has_error()) 
     {
@@ -209,8 +213,8 @@ recvEvents(Reassembler &r, Reassembler::ReassemblerFlags& flags,
 	    + reg_rv.error().message()
 	};
     }
-    if (reg_rv.value() == 1)
-        std::cout << "Registered the worker" << std::endl;
+
+    boost::this_thread::sleep_for(boost::chrono::seconds(1));
 
     // Note: if we switch the order of registerWorker and openAndStart
     // you get into a race condition where the sendState thread starts and
@@ -221,7 +225,7 @@ recvEvents(Reassembler &r, Reassembler::ReassemblerFlags& flags,
     if (open_rv.has_error()) {
         return open_rv;
     }
-
+    
     // Received event information and receiver config. We recycle the buffer
     // with blocking calls to receive data. The extent of good data for a
     // particular event is defined by evtBufSize.

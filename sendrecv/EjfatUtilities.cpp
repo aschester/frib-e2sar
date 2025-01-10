@@ -27,7 +27,6 @@ using namespace e2sar;
 
 /**
  * @brief Dump the buffer to stderr.
- *
  * @param buf Pointer to the start of the data buffer we're dumping
  * @param nBytes Number of bytes to dump
  */
@@ -48,13 +47,10 @@ e2sarUtils::dumpBuffer(u_int8_t* buf, size_t nBytes) {
 
 /**
  * @brief Read URI from EJFAT_URI or non-empty string if passed.
- * 
  * @param uri URI string; if empty, read from EJFAT_URI environment variable.
  * @param tt  Token type used to construct the URI
  * @param preferV6 Prefer IpV6 (optional, default=false)
- *
  * @return The Ejfat URI
- *
  * @note Failure to create a valid URI is fatal
  */
 EjfatURI
@@ -78,9 +74,7 @@ e2sarUtils::getURI(const std::string uri, const EjfatURI::TokenType& tt,
 
 /**
  * @brief Read segmenter configuration from INI file.
- *
  * @param fname Name of the configuration file for the segmenter
- *
  * @return The segmenter flags read from the file
  */
 Segmenter::SegmenterFlags
@@ -116,9 +110,7 @@ e2sarUtils::getSegmenterFlagsFromINI(std::string fname)
 
 /**
  * @brief Read reassembler configuration from INI file.
- *
  * @param fname Name of the configuration file for the reassembler
- *
  * @return The reassembler flags read from the file
  */
 Reassembler::ReassemblerFlags
@@ -132,6 +124,12 @@ e2sarUtils::getReassemblerFlagsFromINI(std::string fname)
     }
 
     auto flags = flags_rv.value();
+
+    // Expect LB header to be included (mainly for testing when useCP == false, 
+    // as normally LB strips it off in normal operation); value must be !useCP.
+    // Set here rather than in the ini file to ensure its correct:
+    
+    flags.withLBHeader = not flags.useCP;
     
     // Print out some info about the flags:
 
@@ -148,7 +146,6 @@ e2sarUtils::getReassemblerFlagsFromINI(std::string fname)
 
 /**
  * @brief Print the segmenter flags to stdout.
- * 
  * @param flags The flags
  */
 void
@@ -171,7 +168,6 @@ e2sarUtils::printSegmenterFlags(const Segmenter::SegmenterFlags& flags)
 
 /**
  * @brief Print the reassembler flags to stdout.
- *
  * @param flags The flags
  */
 void

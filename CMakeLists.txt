@@ -33,9 +33,4 @@ message(STATUS "Using NSCLDAQ unified format: ${UFMT_ROOT}")
 add_compile_options(-g -O2 -Wall)
 
 add_subdirectory(checkdefaults)
-add_subdirectory(sendrecv)
-add_subdirectory(fromini)
 add_subdirectory(simdata)
-
-set(ini_files reassembler_config.ini segmenter_config.ini)
-install(FILES ${ini_files} DESTINATION .)

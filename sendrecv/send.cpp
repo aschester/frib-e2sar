@@ -150,7 +150,7 @@ getOpts(int ac, char* av[])
 	 po::value<float>()->default_value(1),
 	 "Event send rate in Gbps")
 	("ip",
-	 po::value<std::string>()->default_value("127.0.0.1"),
+	 po::value<std::string>()->default_value("35.11.82.130"),
 	 "IP address (IPv4 or IPv6) from which sender sends from")
 	("source,s",
 	 po::value<std::string>()->required(),
@@ -239,14 +239,16 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
     std::cout << "Sending " << nEvents << " event buffers" << std::endl;
     std::cout << "Using MTU " << s.getMTU() << std::endl;
 
-    // Start threads, open sockets. Start sending sync packets:
+    // // Start threads, open sockets. Start sending sync packets:
     
-    auto open_rv = s.openAndStart();
+    auto open_rv = s.openAndStart();    
     if (open_rv.has_error()) {
 	std::cerr << "Failed to start Segmenter: "
 		  << open_rv.error().message() << std::endl;
         return open_rv;
-    }
+    } else {
+	std::cout << "Segmenter started OK\n";
+    }	
 
     // Sleep to allow small number of frames to leave:
     
@@ -260,25 +262,26 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
     // Get the current time point:
 	
     auto now = boost::chrono::high_resolution_clock::now();
+
+    if (debug) {
+	std::cout << "Starting send loop at: " << now << std::endl;
+    }
     
-    // We run the send loop until we've sent all events or EOF:
+    // // We run the send loop until we've sent all events or EOF:
     
-    int remaining = nEvents; 
+    int remaining = nEvents;    
     while (1) {
 
 	// Get a buffer, either from the queue or by allocating a new one:
 
 	u_int8_t* evtBuf{nullptr};
 	if (!evtBufQueue.pop(evtBuf)) {
-	    // segfaulting here for some reason ?!?!?!
 	    evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
 	}
 
 	// Get the ring item we'll pack into this buffer and send:
 	
-	std::unique_ptr<::ufmt::CRingItem> pItem(pSource->getItem());
-	std::cout << pItem->type() << std::endl;
-	
+	std::unique_ptr<::ufmt::CRingItem> pItem(pSource->getItem());	
 	if (!pItem.get()) { // End of source.
 	    break;
 	}
@@ -308,7 +311,7 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 	    std::cout << pItem->toString() << std::endl;
 	}
 	    
-   	auto sendq_rv = s.addToSendQueue(evtBuf, evtBufSize, evtNumber, dataId,
+	auto sendq_rv = s.addToSendQueue(evtBuf, evtBufSize, evtNumber, dataId,
 					 entropy, &freeBuffer, evtBuf);
 	if (sendq_rv.has_error()) {
 	    std::cout << sendq_rv.error().message() << std::endl;
@@ -485,12 +488,16 @@ main(int argc, char* argv[])
 	// Configure control plane (if used):
 
 	if (flags.useCP) {
+	    
+	    // Note that when using CP the sender IP addr must be one of:
+	    // IPv6: 2605:dd00:4000:82:130:1232:2709:0
+	    // IPv4: 35.11.82.130
+	    
 	    senders.push_back(sendIP);
 
-	    // Create the instance of the load balancer.
-	    // validate certs = true, prefer host ipv addr = false:
+	    // Create the instance of the load balancer:
 	    
-	    lbmPtr = new LBManager(uri, true, false);
+	    lbmPtr = new LBManager(uri);
 
 	    // Register senders:
 
@@ -511,14 +518,14 @@ main(int argc, char* argv[])
 	    }
 	    
 	    if (debug) {		
-		auto uriString
+		auto uriStr
 		    = lbmPtr->get_URI().to_string(EjfatURI::TokenType::session);
-		auto addrString = lbmPtr->get_AddrString();
+		auto addrStr = lbmPtr->get_AddrString();
 		auto lbId = lbmPtr->get_URI().get_lbId();
 		    
 		std::cout << "Getting LB status:" << std::endl;
-		std::cout << "\tContacting: " << uriString
-			  << " using address: " << addrString
+		std::cout << "\tContacting: " << uriStr
+			  << " using address: " << addrStr
 			  << std::endl;
 		std::cout << "\tLB ID: " << lbId << std::endl;
 	    }	    
