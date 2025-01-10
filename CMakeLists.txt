@@ -33,4 +33,4 @@ message(STATUS "Using NSCLDAQ unified format: ${UFMT_ROOT}")
 add_compile_options(-g -O2 -Wall)
 
 add_subdirectory(checkdefaults)
-add_subdirectory(simdata)
+add_subdirectory(sendrecv)
