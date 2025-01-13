@@ -58,7 +58,7 @@ namespace po = boost::program_options;
 namespace pt = boost::posix_time;
 using namespace e2sar;
 using namespace ufmt;
-using namespace e2sarUtils; // Our utilities
+using namespace ejfatUtils; // Our utilities
 
 // Other global config:
 

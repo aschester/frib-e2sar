@@ -68,7 +68,7 @@
 namespace po = boost::program_options;
 using namespace e2sar;
 using namespace ufmt;
-using namespace e2sarUtils; // Our utilities
+using namespace ejfatUtils; // Our utilities
 
 // Prepare a pool. To avoid locking the pool we use the return queue.
 

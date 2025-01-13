@@ -27,12 +27,11 @@
  * @file EjfatUtilities.h
  * @brief Define some useful functions for EJFAT processing.
  * @details
- * Functions exist in the e2sarUtils namespace.
+ * Functions exist in the ejfatUtils namespace.
  */
 
-namespace e2sarUtils {
+namespace ejfatUtils {
     void dumpBuffer(u_int8_t* buf, size_t nBytes);
-
     e2sar::EjfatURI getURI(
 	const std::string uri, const e2sar::EjfatURI::TokenType& tt,
 	const bool preferV6
