@@ -16,12 +16,15 @@
 
 /** 
  * @file recv.cpp
- * @brief Simple receive with no load balancer.
+ * @brief Simple receive with or without load balancer.
  */
+
+/** @todo (ASC 1/9/25): Multiple threads for recv, see e2sar_perf.cpp. */
 
 #include <iostream>
 #include <cstddef>
 #include <string>
+#include <csignal>
 
 #include <boost/program_options.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -62,7 +65,27 @@ using namespace e2sarUtils; // Our utilities
 bool threadsRunning(true);
 u_int16_t reportThreadSleepMs{2000}; // 2 second maximum
 Reassembler* reasPtr{nullptr};
-CDataSink* sinkPtr{nullptr};
+
+void
+shutdown() {
+    std::cout << "Stopping threads" << std::endl;
+    threadsRunning = false;
+    boost::chrono::milliseconds duration(1000);
+    boost::this_thread::sleep_for(duration);
+    
+    if (reasPtr != nullptr)
+    {
+        std::cout << "Deregistering worker" << std::endl;
+        auto deregres = reasPtr->deregisterWorker();
+        if (deregres.has_error()) {
+            std::cerr << "Unable to deregister worker on exit: "
+		      << deregres.error().message() << std::endl;
+	}
+        reasPtr->stopThreads();
+    }
+
+    boost::this_thread::sleep_for(duration);
+}
 
 /**
  * @brief Handle interrupt and shutdown nicely.
@@ -72,31 +95,15 @@ CDataSink* sinkPtr{nullptr};
 void
 ctrlCHandler(int sig) 
 {
-    if (reasPtr != nullptr)
-    {
-        std::cout << "Deregistering worker" << std::endl;
-        auto deregres = reasPtr->deregisterWorker();
-        if (deregres.has_error()) 
-            std::cerr << "Unable to deregister worker on exit: "
-		      << deregres.error().message() << std::endl;
-        reasPtr->stopThreads();
-    }
-
-    threadsRunning = false;
-    // Instead of join on the main thread??
-    boost::chrono::milliseconds duration(1000);
-    boost::this_thread::sleep_for(duration);
-
     // Re-raise the signal and invoke default behavior, which should close
     // our open data sink:
-    
+    shutdown();
     signal(sig, SIG_DFL);
-    raise(sig);    
+    raise(sig);
 }
 
 /**
  * @brief Parse the command line variables and return the map.
- * 
  * @return Variables map
  */
 po::variables_map
@@ -104,8 +111,8 @@ getOpts(int ac, char* av[])
 {
     // Configure and parse command-line options:
      
-    po::options_description od("Send command-line options");
-    auto opts = od.add_options()
+    po::options_description od("Receive command-line options");
+    od.add_options()
 	("help,h", "show command help")
 	("config-file,c",
 	 po::value<std::string>()->default_value("./reassembler_config.ini"),
@@ -114,10 +121,10 @@ getOpts(int ac, char* av[])
 	 po::value<std::string>(),
 	 "URI from the command line to override EJFAT_URI envvar")
 	("ip",
-	 po::value<std::string>()->default_value("127.0.0.1"),
+	 po::value<std::string>()->default_value("35.11.82.130"),
 	 "IP address (IPv4 or IPv6) on which receiver listens.")
 	("port",
-	 po::value<u_int16_t>()->default_value(10000),
+	 po::value<u_int16_t>()->default_value(23457),
 	 "starting UDP port number on which receiver listens.")
 	("sink,S",
 	 po::value<std::string>()->required(),
@@ -146,11 +153,8 @@ getOpts(int ac, char* av[])
 
 /**
  * @brief Map the version we get from the command line to a factory version.
- *
  * @param fmtIn Format the user requested.
- * 
  * @throw std::invalid_argument Bad format version, including NSCLDAQ v10.
- * 
  * @return Factory version ID (from the enum).
  */
 FormatSelector::SupportedVersions
@@ -170,15 +174,12 @@ mapVersion(int fmtIn)
 
 /**
  * @brief Receive and reassemble events.
- *
  * @param r References our Reassembler instance.
  * @param pSink Pointer to the (for now always a file) data sink we write to.
  * @param factory Factory for creating formatted ring items.
  * @param durationSec Listening duration; if 0, listen forever.
  * @param debug Enable debugging output.
- *
  * @return EXIT_SUCCESS if successful, E2SAR error otherwise.
- *
  * @note (ASC 11/26/24): Not compatible with NSCLDAQ 10 at the moment. 
  * The data unpacking from an arbitrary buffer containing a complete ring 
  * item is complicated by the fact the body headers do not exist in v10. 
@@ -189,27 +190,51 @@ mapVersion(int fmtIn)
 result<int>
 recvEvents(Reassembler &r, Reassembler::ReassemblerFlags& flags,
 	   CDataSink* pSink, RingItemFactoryBase& factory, int durationSec,
-	   FormatSelector::SupportedVersions version, bool debug=false) {
-
+	   FormatSelector::SupportedVersions version, bool debug=false)
+{
+       
     std::cout << "Receiving on ports " << r.get_recvPorts().first
 	      << ":" << r.get_recvPorts().second << std::endl;
 
-    // Received event information and receiver config. We recycle the buffer
-    // with blocking calls to receive data. The extent of good data for a
-    // particular event is defined by evtBufSize. In theory evtBuf 
+    // Register the worker (will be NOOP if withCP is set to false):
+    
+    auto hostname_rv = NetUtil::getHostName();
+    if (hostname_rv.has_error()) 
+    {
+        return E2SARErrorInfo{
+	    hostname_rv.error().code(), hostname_rv.error().message()
+	};
+    }
+    auto reg_rv = r.registerWorker(hostname_rv.value());
+    if (reg_rv.has_error())
+    {
+        return E2SARErrorInfo{
+	    E2SARErrorc::RPCError, "Unable to register worker node: "
+	    + reg_rv.error().message()
+	};
+    }
 
-    u_int8_t*  evtBuf{nullptr}; // Event buffer
-    size_t     evtBufSize;      // Event buffer size in bytes
-    EventNum_t evtNum;          // Event number (typically timestamp)
-    u_int16_t  dataId;          // Data Id (source Id or other)
-    u_int64_t  waitMs = 1000;   // Wait time in milliseconds
+    boost::this_thread::sleep_for(boost::chrono::seconds(1));
 
-    // We assume for now that the CP is disabled:
+    // Note: if we switch the order of registerWorker and openAndStart
+    // you get into a race condition where the sendState thread starts and
+    // tries to send queue updates, however session token is not yet
+    // available...
     
     auto open_rv = r.openAndStart();
     if (open_rv.has_error()) {
         return open_rv;
     }
+    
+    // Received event information and receiver config. We recycle the buffer
+    // with blocking calls to receive data. The extent of good data for a
+    // particular event is defined by evtBufSize.
+    
+    u_int8_t*  evtBuf{nullptr}; // Event buffer
+    size_t     evtBufSize;      // Event buffer size in bytes
+    EventNum_t evtNum;          // Event number (typically timestamp)
+    u_int16_t  dataId;          // Data Id (source Id or other)
+    u_int64_t  waitMs = 1000;   // Wait time in milliseconds
     
     auto now = boost::chrono::steady_clock::now();
 
@@ -228,13 +253,12 @@ recvEvents(Reassembler &r, Reassembler::ReassemblerFlags& flags,
 
 	// If duration is set stop listening after that time and exit:
 	
-        if (
-	    (durationSec != 0)
-	    && ((next - now) > boost::chrono::seconds(durationSec))
-	    )
+        if ((durationSec != 0)
+	    && ((next - now) > boost::chrono::seconds(durationSec)))
         {
-            ctrlCHandler(0);
+	    shutdown();
             break;
+	    
         }
 
 	// Read error:
@@ -310,7 +334,6 @@ recvEvents(Reassembler &r, Reassembler::ReassemblerFlags& flags,
 
 /**
  * @brief Monitor for event reassembly.
- *
  * @param r Pointer to Reassembler.
  */
 void

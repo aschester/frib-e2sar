@@ -1,6 +1,6 @@
 # FRIB-E2SAR dev
 
-This is a repository for various E2SAR-related development at FRIB. The subdirectories contain examples demonstrating how to perform simple initialization and segmenter-reassembly tasks up to and including an E2SAR workflow for simulated FRIBDAQ data (see `simdata`).
+This is a repository for various E2SAR-related development at FRIB. The subdirectories contain examples demonstrating how to perform simple initialization and segmenter-reassembly tasks up to and including an E2SAR workflow for FRIBDAQ data (see `simdata`).
 
 ## Requirements
 
@@ -37,3 +37,7 @@ cmake --install . --prefix "/path/to/installation/dir"
 `export EJFAT_URI="ejfat://mytoken@127.0.0.1:23456/lb/123?data=127.0.0.1:23457&sync=127.0.0.1:23458"`.
 
 The quotes on the string may be needed to prevent your shell from interpreting `&` as a shell command. For point-to-point reassembly, the receiver should listen on the data port, which is in this case 23457.
+
+## Notes
+
+- Ensure that useCP is set to the same value in both the segmenter and reassembler configuration files (todo: alternate config method which sets CP use for the  whole pipeline)
