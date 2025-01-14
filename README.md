@@ -1,6 +1,6 @@
 # FRIB-E2SAR dev
 
-This is a repository for various E2SAR-related development at FRIB. The subdirectories contain examples demonstrating how to perform simple initialization and segmenter-reassembly tasks up to and including an E2SAR workflow for FRIBDAQ data (see `simdata`).
+This is a repository for various E2SAR-related development at FRIB. The subdirectories contain examples demonstrating how to perform simple initialization and segmenter-reassembly tasks up to and including an E2SAR workflow for FRIBDAQ data (`sendrecv`).
 
 ## Requirements
 
