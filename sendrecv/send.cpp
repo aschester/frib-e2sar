@@ -63,12 +63,12 @@
 #include "DataSource.h"
 #include "FdDataSource.h"
 #include "StreamDataSource.h"
-#include "EjfatUtilities.h"
+#include "FribEjfatUtils.h"
 
 namespace po = boost::program_options;
 using namespace e2sar;
 using namespace ufmt;
-using namespace ejfatUtils; // Our utilities
+using namespace frib_ejfat;
 
 // Prepare a pool. To avoid locking the pool we use the return queue.
 

@@ -4,7 +4,7 @@
 #
 
 project(
-  SendRecv VERSION 0.1 DESCRIPTION "Use E2SAR to send NSLCDAQ data"
+  SendRecv VERSION 0.1 DESCRIPTION "Use E2SAR to transmit NSLCDAQ data"
   LANGUAGES CXX
   )
 
@@ -13,9 +13,9 @@ set(CMAKE_INSTALL_RPATH ${UFMT_LIB} ${NSCLDAQ_LIB})
 
 set(send_exec send)
 set(send_src send.cpp DataSource.cpp FdDataSource.cpp StreamDataSource.cpp
-  EjfatUtilities.cpp)
+  FribEjfatUtils.cpp)
 set(send_headers DataSource.h FdDataSource.h StreamDataSource.h
-  EjfatUtilities.h)
+  FribEjfatUtils.h)
 
 add_executable(${send_exec} ${send_src})
 target_include_directories(
@@ -41,8 +41,8 @@ target_link_libraries(
   )
 
 set(recv_exec recv)
-set(recv_src recv.cpp CDataSink.cpp CFileDataSink.cpp EjfatUtilities.cpp)
-set(recv_headers CDataSink.h CFileDataSink.h EjfatUtilities.h)
+set(recv_src recv.cpp CDataSink.cpp CFileDataSink.cpp FribEjfatUtils.cpp)
+set(recv_headers CDataSink.h CFileDataSink.h FribEjfatUtils.h)
 
 add_executable(${recv_exec} ${recv_src})
 target_include_directories(

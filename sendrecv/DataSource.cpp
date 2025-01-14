@@ -29,7 +29,7 @@ using namespace ufmt;
 
 /**
  * Constructor
- * @brief Just saves the factory pointer - note that we gain ownershp of the 
+ * @brief Just saves the factory pointer - note that we gain ownership of the 
  * factory and, therefore, it's deleted on our destruction.
  */
 DataSource::DataSource(RingItemFactoryBase* pFactory) :
