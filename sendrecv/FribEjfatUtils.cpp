@@ -15,11 +15,11 @@
 */
 
 /** 
- * @file EjfatUtilities.cpp
+ * @file FribEjfatUtils.cpp
  * @brief Function implementation for EJFAT utils.
  */
 
-#include "EjfatUtilities.h"
+#include "FribEjfatUtils.h"
 
 #include <iostream>
 
@@ -31,10 +31,10 @@ using namespace e2sar;
  * @param nBytes Number of bytes to dump
  */
 void
-e2sarUtils::dumpBuffer(u_int8_t* buf, size_t nBytes) {
+frib_ejfat::dumpBuffer(u_int8_t* buf, size_t nBytes) {
     std::cerr << "------------------------------------------" << std::endl;
     std::cerr << std::hex;
-    for (auto i = 0; i < nBytes; i++) {
+    for (size_t i = 0; i < nBytes; i++) {
 	for (int j = 0; j < 8; j++) {
 	    if (i+1 >= nBytes) break;
 	    std::cerr << *buf << " ";
@@ -54,7 +54,7 @@ e2sarUtils::dumpBuffer(u_int8_t* buf, size_t nBytes) {
  * @note Failure to create a valid URI is fatal
  */
 EjfatURI
-e2sarUtils::getURI(const std::string uri, const EjfatURI::TokenType& tt,
+frib_ejfat::getURI(const std::string uri, const EjfatURI::TokenType& tt,
 		   const bool preferV6=false)
 {
     auto uri_rv = (
@@ -78,7 +78,7 @@ e2sarUtils::getURI(const std::string uri, const EjfatURI::TokenType& tt,
  * @return The segmenter flags read from the file
  */
 Segmenter::SegmenterFlags
-e2sarUtils::getSegmenterFlagsFromINI(std::string fname)
+frib_ejfat::getSegmenterFlagsFromINI(std::string fname)
 {
     auto flags_rv = Segmenter::SegmenterFlags::getFromINI(fname);
     if (flags_rv.has_error()) {
@@ -114,7 +114,7 @@ e2sarUtils::getSegmenterFlagsFromINI(std::string fname)
  * @return The reassembler flags read from the file
  */
 Reassembler::ReassemblerFlags
-e2sarUtils::getReassemblerFlagsFromINI(std::string fname)
+frib_ejfat::getReassemblerFlagsFromINI(std::string fname)
 {
     auto flags_rv = Reassembler::ReassemblerFlags::getFromINI(fname);
     if (flags_rv.has_error()) {
@@ -149,7 +149,7 @@ e2sarUtils::getReassemblerFlagsFromINI(std::string fname)
  * @param flags The flags
  */
 void
-e2sarUtils::printSegmenterFlags(const Segmenter::SegmenterFlags& flags)
+frib_ejfat::printSegmenterFlags(const Segmenter::SegmenterFlags& flags)
 {
     std::cout << "Segmenter flags:\n";
     std::cout << "\tdpV6\t\t" << flags.dpV6 << std::endl;
@@ -171,7 +171,7 @@ e2sarUtils::printSegmenterFlags(const Segmenter::SegmenterFlags& flags)
  * @param flags The flags
  */
 void
-e2sarUtils::printReassemblerFlags(const Reassembler::ReassemblerFlags& flags)
+frib_ejfat::printReassemblerFlags(const Reassembler::ReassemblerFlags& flags)
 {
     std::cout << "Reassembler flags:\n";
     std::cout <<"\tuseCP\t\t" << flags.useCP << std::endl;

@@ -14,8 +14,8 @@
              East Lansing, MI 48824-1321
 */
 
-#ifndef EJFATUTILITIES_H
-#define EJFATUTILITIES_H
+#ifndef FRIBEJFATUTILS_H
+#define FRIBEJFATUTILS_H
 
 #include <string>
 
@@ -24,29 +24,25 @@
 #include <e2sarDPReassembler.hpp>
 
 /** 
- * @file EjfatUtilities.h
+ * @file FribEjfatUtils.h
  * @brief Define some useful functions for EJFAT processing.
  * @details
- * Functions exist in the e2sarUtils namespace.
+ * Functions exist in the frib_ejfat namespace.
  */
 
-namespace e2sarUtils {
+namespace frib_ejfat {  
     void dumpBuffer(u_int8_t* buf, size_t nBytes);
-
-    e2sar::EjfatURI getURI(
-	const std::string uri, const e2sar::EjfatURI::TokenType& tt,
-	const bool preferV6
-	);
+    e2sar::EjfatURI getURI(const std::string uri,
+			   const e2sar::EjfatURI::TokenType& tt,
+			   const bool preferV6);
     e2sar::Segmenter::SegmenterFlags getSegmenterFlagsFromINI(
-	std::string fname
-	);
+	std::string fname);
     e2sar::Reassembler::ReassemblerFlags getReassemblerFlagsFromINI(
-	std::string fname
-	);
-    void printSegmenterFlags(const e2sar::Segmenter::SegmenterFlags& flags);
+	std::string fname);
+    void printSegmenterFlags(
+	const e2sar::Segmenter::SegmenterFlags& flags);
     void printReassemblerFlags(
-	const e2sar::Reassembler::ReassemblerFlags& flags
-	);
+	const e2sar::Reassembler::ReassemblerFlags& flags);
 }
     
 #endif

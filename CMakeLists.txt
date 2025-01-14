@@ -34,3 +34,7 @@ add_compile_options(-g -O2 -Wall)
 
 add_subdirectory(checkdefaults)
 add_subdirectory(sendrecv)
+
+set(ini_files reassembler_config.ini segmenter_config.ini)
+install(FILES ${ini_files} DESTINATION ini)
+
