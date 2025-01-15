@@ -16,7 +16,7 @@
 
 /** 
  * @file send.cpp
- * @brief Send simulated DDAS data through E2SAR.
+ * @brief Send NSCLDAQ data through E2SAR.
  */
 
 #include <iostream>
@@ -33,14 +33,8 @@
 
 // Unified format library:
 
-#include <NSCLDAQFormatFactorySelector.h>
 #include <DataFormat.h>
 #include <RingItemFactoryBase.h>
-
-// These are headers for the abstrct ring items we can get back from the
-// factory. As new ring items are added this set of #include's must be
-// updated as well as any processing steps.
-
 #include <CRingItem.h>
 #include <CAbnormalEndItem.h>
 #include <CDataFormatItem.h>
@@ -82,6 +76,9 @@ Segmenter* segPtr{nullptr};
 LBManager* lbmPtr{nullptr};       // nullptr if CP is not enabled
 std::vector<std::string> senders; // Empty if CP is not enabled
 
+/**
+ * @brief Shutdown the sender. Remove senders. Stop threads.
+ */
 void
 shutdown() {
     std::cout << "Stopping threads" << std::endl;
@@ -95,10 +92,10 @@ shutdown() {
             for (auto s: senders)
                 std::cout << s << " ";
             std::cout << std::endl;
-            auto rmres = lbmPtr->removeSenders(senders);
-            if (rmres.has_error()) {
+            auto rv = lbmPtr->removeSenders(senders);
+            if (rv.has_error()) {
                 std::cerr << "Unable to remove sender from list on exit: "
-			  << rmres.error().message() << std::endl;
+			  << rv.error().message() << std::endl;
 	    }
 	    delete lbmPtr;
         }
@@ -110,13 +107,13 @@ shutdown() {
 }
 
 /**
- * @brief Handle interrupt and shutdown nicely.
- * @note Re-raises default interrupt signal at end. Should clean up, close 
- *   files, etc.
+ * @brief Handle interrupt and shutdown.
+ * @note Re-raises default interrupt signal after shutdown for cleanup,
+ *   closing data sink, etc.
  */
 void
 ctrlCHandler(int sig) 
-{    // Re-raise the signal and invoke default behavior:
+{
     shutdown();
     signal(sig, SIG_DFL);
     raise(sig);    
@@ -124,13 +121,11 @@ ctrlCHandler(int sig)
 
 /**
  * @brief Parse the command line variables and return the map.
- * @return Variables map
+ * @return Variables map.
  */
 po::variables_map
 getOpts(int ac, char* av[])
-{   
-    // Configure and parse command-line options:
-    
+{       
     po::options_description od("Send command-line options");
     od.add_options()
 	("help,h", "show command help")
@@ -175,28 +170,10 @@ getOpts(int ac, char* av[])
     return vm;
 }
 
-/**
- * @brief Map the version we get from the command line to a factory version.
- * @param fmtIn Format the user requested.
- * @throw std::invalid_argument Bad format version, including NSCLDAQ v10.
- * @return Factory version ID (from the enum).
+/** 
+ * @brief Callback function to return a buffer to the pool .
+ * @param a Buffer to free and return.
  */
-FormatSelector::SupportedVersions
-mapVersion(int fmtIn)
-{
-    switch (fmtIn) {
-    case 12:
-	return FormatSelector::v12;
-    case 11:
-	return FormatSelector::v11;
-    case 10:
-	throw std::invalid_argument("NSCLDAQ 10 is not currently supported");
-    default:
-	throw std::invalid_argument("Invalid DAQ format version specifier");
-    }
-}
-
-/** @brief Callback function to return a buffer to the pool */
 void
 freeBuffer(boost::any a) 
 {
@@ -239,13 +216,13 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
     std::cout << "Sending " << nEvents << " event buffers" << std::endl;
     std::cout << "Using MTU " << s.getMTU() << std::endl;
 
-    // // Start threads, open sockets. Start sending sync packets:
+   // Start threads, open sockets. Start sending sync packets:
     
-    auto open_rv = s.openAndStart();    
-    if (open_rv.has_error()) {
+    auto rv = s.openAndStart();    
+    if (rv.has_error()) {
 	std::cerr << "Failed to start Segmenter: "
-		  << open_rv.error().message() << std::endl;
-        return open_rv;
+		  << rv.error().message() << std::endl;
+        return rv;
     } else {
 	std::cout << "Segmenter started OK\n";
     }	
@@ -259,29 +236,22 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
     // Send loop
     //
 
-    // Get the current time point:
-	
     auto now = boost::chrono::high_resolution_clock::now();
 
     if (debug) {
 	std::cout << "Starting send loop at: " << now << std::endl;
     }
-    
-    // // We run the send loop until we've sent all events or EOF:
-    
+       
     int remaining = nEvents;    
     while (1) {
-
-	// Get a buffer, either from the queue or by allocating a new one:
-
 	u_int8_t* evtBuf{nullptr};
+	
 	if (!evtBufQueue.pop(evtBuf)) {
 	    evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
 	}
 
-	// Get the ring item we'll pack into this buffer and send:
+	std::unique_ptr<::ufmt::CRingItem> pItem(pSource->getItem());
 	
-	std::unique_ptr<::ufmt::CRingItem> pItem(pSource->getItem());	
 	if (!pItem.get()) { // End of source.
 	    break;
 	}
@@ -311,10 +281,10 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 	    std::cout << pItem->toString() << std::endl;
 	}
 	    
-	auto sendq_rv = s.addToSendQueue(evtBuf, evtBufSize, evtNumber, dataId,
+	rv = s.addToSendQueue(evtBuf, evtBufSize, evtNumber, dataId,
 					 entropy, &freeBuffer, evtBuf);
-	if (sendq_rv.has_error()) {
-	    std::cout << sendq_rv.error().message() << std::endl;
+	if (rv.has_error()) {
+	    std::cout << rv.error().message() << std::endl;
 	    continue;
 	}
 	
@@ -324,8 +294,6 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 		break;
 	    }
 	}
-
-	// Wait to send the next event:
 	
 	auto until = now + boost::chrono::microseconds(interEventSleepUsec);
 	if (now > until)
@@ -344,12 +312,12 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
     while (evtBufQueue.pop(item)) {
 	evtBufPool->free(item);
     }
+    evtBufPool->purge_memory();
 
     // Done sending events, report:
    
     auto stats = s.getSendStats();
 
-    evtBufPool->purge_memory();
     std::cout << "Completed, " << stats.get<0>() << " frames sent, "
 	      << stats.get<1>() << " errors" << std::endl;
     if (stats.get<1>() != 0)
@@ -383,13 +351,9 @@ makeDataSource(RingItemFactoryBase* pFactory, const std::string& strUrl)
     if (strUrl == "-") {
         return new FdDataSource(pFactory, STDIN_FILENO);   
     }
-    
-    // Parse the URI:    
-    
+        
     URL uri(strUrl);
     std::string protocol = uri.getProto();
-
-    // URI could be for a ringbuffer or file:
     
     if ((protocol == "tcp") || (protocol == "ring")) {
 	std::string msg(
@@ -424,7 +388,7 @@ main(int argc, char* argv[])
 	///
 	
 	auto opts = getOpts(argc, argv); // Command-line options.
-	signal(SIGINT, ctrlCHandler); // Ctrl-C signal.
+	signal(SIGINT, ctrlCHandler);    // Ctrl-C signal.
 
 	/////////////////////////////////////////////////////////////////////
 	// Configure data source
@@ -440,19 +404,12 @@ main(int argc, char* argv[])
 	/////////////////////////////////////////////////////////////////////
 	// Configure E2SAR
 	///
-
-	// Instance token for sending data:
-    
+   
 	EjfatURI::TokenType tt{EjfatURI::TokenType::instance};
-
-	// Configure segmenter options:
 
 	u_int32_t evtSourceId(0);
 	u_int16_t dataId(0);
-	
 	size_t evtBufSize = opts["bufsize"].as<size_t>();
-	size_t nEvents = 0;
-	std::string uri_s("");
 	bool debug = opts.count("debug");
 	float rateGbps = opts["send-rate"].as<float>();
 	std::string configFile(opts["config-file"].as<std::string>());
@@ -460,15 +417,17 @@ main(int argc, char* argv[])
 
 	// Override defaults if provided:
 
+	std::string uri_s("");
 	if (opts.count("uri")) {
 	    uri_s = opts["uri"].as<std::string>();
 	}
 	
+	size_t nEvents = 0;	
 	if (opts.count("num")) {
 	    nEvents = opts["num"].as<size_t>();
 	}
 	
-	auto flags = getSegmenterFlagsFromINI(configFile); // Sets IpV6 pref.
+	auto flags = getSegmenterFlagsFromINI(configFile);
 	auto uri = getURI(uri_s, tt, flags.dpV6);	    
     
 	if (debug) {
@@ -483,23 +442,20 @@ main(int argc, char* argv[])
 	// Instantiate and run Segmenter:
 	///
 
-	evtBufPool = new boost::pool<>{evtBufSize}; // For recycling buffers
+	// Create our buffer pool:
+	
+	evtBufPool = new boost::pool<>{evtBufSize};
 
 	// Configure control plane (if used):
 
-	if (flags.useCP) {
-	    
+	if (flags.useCP) {	    
 	    // Note that when using CP the sender IP addr must be one of:
 	    // IPv6: 2605:dd00:4000:82:130:1232:2709:0
 	    // IPv4: 35.11.82.130
 	    
 	    senders.push_back(sendIP);
-
-	    // Create the instance of the load balancer:
 	    
 	    lbmPtr = new LBManager(uri);
-
-	    // Register senders:
 
 	    std::cout << "Adding senders to LB:\n";
 	    for (const auto& s: senders) {
@@ -507,13 +463,13 @@ main(int argc, char* argv[])
 	    }
 	    std::cout << std::endl;
 
-	    auto addSenders_rv = lbmPtr->addSenders(senders);
+	    auto rv = lbmPtr->addSenders(senders);
 
-	    if (addSenders_rv.has_error()) {
-		std::cerr << "Unable to add sender: "
-			  << addSenders_rv.error().message()
+	    if (rv.has_error()) {
+		std::cerr << "Unable to add sender: "  << rv.error().message()
 			  << std::endl;
 		std::cerr << "Exiting...\n";
+		shutdown();
 		std::exit(EXIT_FAILURE);
 	    }
 	    
@@ -533,11 +489,11 @@ main(int argc, char* argv[])
 	
 	Segmenter seg(uri, dataId, evtSourceId, flags);
 	segPtr = &seg;
-	auto send_rv = sendEvents(seg, pSource.get(), nEvents,
-				  evtBufSize, rateGbps, debug);
-	if (send_rv.has_error()) {
+	auto rv = sendEvents(seg, pSource.get(), nEvents,
+			evtBufSize, rateGbps, debug);
+	if (rv.has_error()) {
 	    std::cerr << "Segmenter encountered an error: "
-		      << send_rv.error().message() << std::endl;
+		      << rv.error().message() << std::endl;
 	    exit(EXIT_FAILURE);
 	}
 
