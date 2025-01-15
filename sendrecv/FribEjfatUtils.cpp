@@ -24,6 +24,7 @@
 #include <iostream>
 
 using namespace e2sar;
+using namespace ufmt;
 
 /**
  * @brief Dump the buffer to stderr.
@@ -190,4 +191,25 @@ frib_ejfat::printReassemblerFlags(const Reassembler::ReassemblerFlags& flags)
     std::cout <<"\tweight\t\t" << flags.weight << std::endl;
     std::cout <<"\tmin_factor\t" << flags.min_factor << std::endl;
     std::cout <<"\tmax_factor\t" << flags.max_factor << std::endl;
+}
+
+/**
+ * @brief Map the version we get from the command line to a factory version.
+ * @param fmtIn Format the user requested.
+ * @throw std::invalid_argument Bad format version.
+ * @return Factory version ID (from the enum).
+ */
+FormatSelector::SupportedVersions
+frib_ejfat::mapVersion(int fmtIn)
+{
+    switch (fmtIn) {
+    case 12:
+	return FormatSelector::v12;
+    case 11:
+	return FormatSelector::v11;
+    case 10:
+	throw std::invalid_argument("NSCLDAQ 10 is not currently supported");
+    default:
+	throw std::invalid_argument("Invalid DAQ format version specifier");
+    }
 }

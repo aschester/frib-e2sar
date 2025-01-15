@@ -16,7 +16,7 @@
 
 /** 
  * @file recv.cpp
- * @brief Simple receive with or without load balancer.
+ * @brief Simple receive of NSCLDAQ data with or without load balancer.
  */
 
 /** @todo (ASC 1/9/25): Multiple threads for recv, see e2sar_perf.cpp. */
@@ -34,14 +34,8 @@
 
 // Unified format library:
 
-#include <NSCLDAQFormatFactorySelector.h>
 #include <DataFormat.h>
 #include <RingItemFactoryBase.h>
-
-// These are headers for the abstrct ring items we can get back from the
-// factory. As new ring items are added this set of #include's must be
-// updated as well as any processing steps.
-
 #include <CRingItem.h>
 
 // Other NSCLDAQ headers:
@@ -66,6 +60,9 @@ bool threadsRunning(true);
 u_int16_t reportThreadSleepMs{2000}; // 2 second maximum
 Reassembler* reasPtr{nullptr};
 
+/**
+ * @brief Shutdown the receiver. Deregister workers. Stop threads.
+ */
 void
 shutdown() {
     std::cout << "Stopping threads" << std::endl;
@@ -76,10 +73,10 @@ shutdown() {
     if (reasPtr != nullptr)
     {
         std::cout << "Deregistering worker" << std::endl;
-        auto deregres = reasPtr->deregisterWorker();
-        if (deregres.has_error()) {
+        auto rv = reasPtr->deregisterWorker();
+        if (rv.has_error()) {
             std::cerr << "Unable to deregister worker on exit: "
-		      << deregres.error().message() << std::endl;
+		      << rv.error().message() << std::endl;
 	}
         reasPtr->stopThreads();
     }
@@ -88,15 +85,13 @@ shutdown() {
 }
 
 /**
- * @brief Handle interrupt and shutdown nicely.
- * @note Re-raises default interrupt signal at end. Should clean up, close 
- *   files, etc.
+ * @brief Handle interrupt and shutdown.
+ * @note Re-raises default interrupt signal after shutdown for cleanup,
+ *   closing data sink, etc.
  */
 void
 ctrlCHandler(int sig) 
 {
-    // Re-raise the signal and invoke default behavior, which should close
-    // our open data sink:
     shutdown();
     signal(sig, SIG_DFL);
     raise(sig);
@@ -104,13 +99,13 @@ ctrlCHandler(int sig)
 
 /**
  * @brief Parse the command line variables and return the map.
- * @return Variables map
+ * @param ac Argument count.
+ * @param av Argument vector.
+ * @return Variables map.
  */
 po::variables_map
 getOpts(int ac, char* av[])
-{
-    // Configure and parse command-line options:
-     
+{    
     po::options_description od("Receive command-line options");
     od.add_options()
 	("help,h", "show command help")
@@ -129,6 +124,15 @@ getOpts(int ac, char* av[])
 	("sink,S",
 	 po::value<std::string>()->required(),
 	 "path to output file data sink (*not* a URI)")
+	("threads,t",
+	 po::value<size_t>()->default_value(1),
+	 "number of reassembler threads")
+	("deq",
+	 po::value<size_t>()->default_value(1),
+	 "number of dequeue/read threads in receiver")
+	("duration,d",
+	 po::value<int>()->default_value(0),
+	 "seconds to run the receiver, 0 for inifinite")
 	("preferV6",
 	 po::value<bool>()->default_value(false),
 	 "prefer IPv6 over IPv4")
@@ -152,80 +156,69 @@ getOpts(int ac, char* av[])
 }
 
 /**
- * @brief Map the version we get from the command line to a factory version.
- * @param fmtIn Format the user requested.
- * @throw std::invalid_argument Bad format version, including NSCLDAQ v10.
- * @return Factory version ID (from the enum).
+ * @brief Register workers and start the receiver threads.
+ * @param r Pointer to Reassembler instance.
+ * @return EXIT_SUCCESS if successful, E2SAR error otherwise.
+ * @note This function must be called prior to the receive loop to ensure that
+ * workers are registered only once.
  */
-FormatSelector::SupportedVersions
-mapVersion(int fmtIn)
-{
-    switch (fmtIn) {
-    case 12:
-	return FormatSelector::v12;
-    case 11:
-	return FormatSelector::v11;
-    case 10:
-	throw std::invalid_argument("NSCLDAQ 10 is not currently supported");
-    default:
-	throw std::invalid_argument("Invalid DAQ format version specifier");
+result<int>
+prepareToReceive(Reassembler* r)
+{           
+    std::cout << "Receiving on ports " << r->get_recvPorts().first
+	      << ":" << r->get_recvPorts().second << std::endl;
+
+    // Worker registration is NOP if not using control plane:
+    
+    auto hostrv = NetUtil::getHostName();
+    if (hostrv.has_error()) 
+    {
+        return E2SARErrorInfo{hostrv.error().code(), hostrv.error().message()};
     }
+    
+    auto regrv = r->registerWorker(hostrv.value());
+    if (regrv.has_error())
+    {
+	std::string msg("Unable to register worker node: ");
+	msg += regrv.error().message();
+        return E2SARErrorInfo{E2SARErrorc::RPCError, msg};
+    }
+
+    boost::this_thread::sleep_for(boost::chrono::seconds(1));
+
+    // @note If we switch the order of registerWorker and openAndStart
+    // you get into a race condition where the sendState thread starts and
+    // tries to send queue updates, however the session token is not yet
+    // available...
+    
+    auto oasrv = r->openAndStart();
+    if (oasrv.has_error()) {
+        return oasrv;
+    }
+    
+    return EXIT_SUCCESS;
 }
 
 /**
  * @brief Receive and reassemble events.
- * @param r References our Reassembler instance.
+ * @param r Pointer to our Reassembler instance.
  * @param pSink Pointer to the (for now always a file) data sink we write to.
  * @param factory Factory for creating formatted ring items.
  * @param durationSec Listening duration; if 0, listen forever.
  * @param debug Enable debugging output.
  * @return EXIT_SUCCESS if successful, E2SAR error otherwise.
  * @note (ASC 11/26/24): Not compatible with NSCLDAQ 10 at the moment. 
- * The data unpacking from an arbitrary buffer containing a complete ring 
- * item is complicated by the fact the body headers do not exist in v10. 
- * Easiest approach is to leave as-is and assume nobody will ever try this 
- * with v10 data. A more complete solution would entail switching the buffer
- * unpacking method based on the DAQ version provided by the user.
+ *   The data unpacking from an arbitrary buffer containing a complete ring 
+ *   item is complicated by the fact the body headers do not exist in v10. 
+ *   Easiest approach is to leave as-is and assume nobody will ever try this 
+ *   with v10 data. A more complete solution would entail switching the buffer
+ *   unpacking method based on the DAQ version provided by the user.
  */
 result<int>
-recvEvents(Reassembler &r, Reassembler::ReassemblerFlags& flags,
+recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
 	   CDataSink* pSink, RingItemFactoryBase& factory, int durationSec,
 	   FormatSelector::SupportedVersions version, bool debug=false)
-{
-       
-    std::cout << "Receiving on ports " << r.get_recvPorts().first
-	      << ":" << r.get_recvPorts().second << std::endl;
-
-    // Register the worker (will be NOOP if withCP is set to false):
-    
-    auto hostname_rv = NetUtil::getHostName();
-    if (hostname_rv.has_error()) 
-    {
-        return E2SARErrorInfo{
-	    hostname_rv.error().code(), hostname_rv.error().message()
-	};
-    }
-    auto reg_rv = r.registerWorker(hostname_rv.value());
-    if (reg_rv.has_error())
-    {
-        return E2SARErrorInfo{
-	    E2SARErrorc::RPCError, "Unable to register worker node: "
-	    + reg_rv.error().message()
-	};
-    }
-
-    boost::this_thread::sleep_for(boost::chrono::seconds(1));
-
-    // Note: if we switch the order of registerWorker and openAndStart
-    // you get into a race condition where the sendState thread starts and
-    // tries to send queue updates, however session token is not yet
-    // available...
-    
-    auto open_rv = r.openAndStart();
-    if (open_rv.has_error()) {
-        return open_rv;
-    }
-    
+{    
     // Received event information and receiver config. We recycle the buffer
     // with blocking calls to receive data. The extent of good data for a
     // particular event is defined by evtBufSize.
@@ -246,29 +239,24 @@ recvEvents(Reassembler &r, Reassembler::ReassemblerFlags& flags,
     {	
 	// Blocking receive. Use getEvent() for non-blocking:
 	
-	auto recv_rv = r.recvEvent(&evtBuf, &evtBufSize, &evtNum,
+	auto rv = r->recvEvent(&evtBuf, &evtBufSize, &evtNum,
 				   &dataId, waitMs);
-	//auto recv_rv = r.getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
+	//auto rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
         auto next = boost::chrono::steady_clock::now();
 
-	// If duration is set stop listening after that time and exit:
+	// If duration is set stop listening after that time and exit.
+	// Note that we handle shutdown in main after the read thread(s)
+	// have exited.
 	
         if ((durationSec != 0)
 	    && ((next - now) > boost::chrono::seconds(durationSec)))
-        {
-	    shutdown();
             break;
-	    
-        }
-
-	// Read error:
 	
-        if (recv_rv.has_error())
-            return recv_rv;
-
-        if (recv_rv.value() == -1) { // Queue is empty
-            continue;
-	}
+        if (rv.has_error())
+            return rv;
+	
+        if (rv.value() == -1) // Queue is empty
+            continue;	
 	
 	/////////////////////////////////////////////////////////////////////
 	// Data post-processing:
@@ -297,7 +285,7 @@ recvEvents(Reassembler &r, Reassembler::ReassemblerFlags& flags,
 	    bodyHdrSize = sizeof(uint32_t); // Inclusive size
 	}	
 	p += bodyHdrSize;
-	bodySize -= bodyHdrSize; // Whatever is left is the payload
+	bodySize -= bodyHdrSize; // Whatever is left is the payload.
 
 	std::unique_ptr<CRingItem> pItem(
 	    factory.makeRingItem(pHdr->s_type, bodySize)
@@ -322,8 +310,6 @@ recvEvents(Reassembler &r, Reassembler::ReassemblerFlags& flags,
 	}
 
 	pSink->putItem(*pItem.get());
-
-	// Cleanup:
 	
 	delete evtBuf;
 	evtBuf = nullptr;
@@ -348,10 +334,10 @@ recvStatsThread(Reassembler *r)
 
         while(true)
         {
-            auto res = r->get_LostEvent();
-            if (res.has_error())
+            auto rv = r->get_LostEvent();
+            if (rv.has_error())
                 break;
-            lostEvents.push_back(res.value());
+            lostEvents.push_back(rv.value());
         }
 
         std::cout << "Stats:" << std::endl;	
@@ -390,7 +376,7 @@ int
 main(int argc, char* argv[])
 {    
     auto opts = getOpts(argc, argv); // Command-line options.
-    signal(SIGINT, ctrlCHandler); // Ctrl-C signal:
+    signal(SIGINT, ctrlCHandler);    // Ctrl-C signal:
 
     try {
 
@@ -414,12 +400,13 @@ main(int argc, char* argv[])
 	auto preferV6 = opts["preferV6"].as<bool>();
 	auto ip_s = opts["ip"].as<std::string>();
 	auto port = opts["port"].as<u_int16_t>();
-	int durationSec = 0;  // Receive duration, 0 is forever
-	size_t numThreads(1); // Receiver threads
-	bool debug = opts.count("debug");
-	std::string uri_s("");
+	int durationSec = opts["duration"].as<int>();
+	size_t numThreads = opts["threads"].as<size_t>(); // Reassembler
+	size_t deqThreads = opts["deq"].as<size_t>();     // Dequeue/read
 	std::string configFile(opts["config-file"].as<std::string>());
+	bool debug = opts.count("debug");
 
+	std::string uri_s("");
 	if (opts.count("uri")) {
 	    uri_s = opts["uri"].as<std::string>();
 	}
@@ -438,15 +425,32 @@ main(int argc, char* argv[])
 	///
 	
 	ip::address ip = ip::make_address(ip_s);
-	Reassembler reas(uri, ip, port, numThreads, flags);
-	reasPtr = &reas;
-	boost::thread statsThread(&recvStatsThread, &reas);
-	auto recv_rv = recvEvents(reas, flags, pSink.get(), factory,
-				  durationSec, version, debug);
-	if (recv_rv.has_error()) {
+	reasPtr = new Reassembler(uri, ip, port, numThreads, flags);
+	
+	boost::thread statsThread(&recvStatsThread, reasPtr);
+
+	auto rv = prepareToReceive(reasPtr);
+	if (rv.has_error()) {
 	    std::cerr << "Reassembler encountered an error: "
-		      << recv_rv.error().message() << std::endl;
+		      << rv.error().message() << std::endl;
+	    shutdown();
+	    exit(EXIT_FAILURE);
 	}
+
+	std::vector<boost::thread> threads;
+	for(size_t i = 0; i < deqThreads; i++)
+	{
+	    boost::thread syncT(recvEvents, reasPtr, flags, pSink.get(),
+				std::ref(factory), durationSec, version,
+				debug);
+	    threads.push_back(std::move(syncT)); // Transfer, dont copy!
+	}
+
+	for (auto& t : threads) // Must be a reference.
+	    t.join();
+	
+	shutdown(); // Shutdown if duration is not infinite.
+	       
     } catch (E2SARException &e) {
 	std::cerr << "Unable to create reassembler: "
 		  << static_cast<std::string>(e) << std::endl;
