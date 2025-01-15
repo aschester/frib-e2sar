@@ -32,7 +32,7 @@ namespace ufmt {
 
 /**
  * @class DataSource
- * @brief Abstract base class for DDAS data sources.
+ * @brief Abstract data source base class.
  * @details
  * Pure abstract data source which uses a factory's ring item getters to
  * provide ring items from a data source. Since the factory provides this,
