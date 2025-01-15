@@ -40,9 +40,9 @@ namespace ufmt {
  * - FdDataSource: give data from a file descriptor.
  * - StreamDataSource: give data from a stream.
  * @note Neither of these data sources supports reading directly from a ring 
- * buffer, as the format library is unaware of those NSCLDAQ classes. To read 
- * data from a ringbuffer you can create a file descriptor data source and 
- * read data from stdin i.e. `ringselector | ddasdumper -`.
+ *   buffer, as the format library is possibly unaware of those NSCLDAQ classes.
+ *   To read data from a ringbuffer you can create a file descriptor data 
+ *   source and read data from stdin i.e. `ringselector | send -s -`.
  */
 
 class DataSource {
