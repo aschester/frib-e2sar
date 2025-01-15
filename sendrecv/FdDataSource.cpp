@@ -10,7 +10,6 @@
      Authors:
              Ron Fox
              Giordano Cerriza
-	     Aaron Chester
 	     FRIB
 	     Michigan State University
 	     East Lansing, MI 48824-1321
@@ -27,26 +26,12 @@
 
 using namespace ufmt;
 
-/**
- * constructor
- * @param pFactory Pointer to the factory used to get items.
- * @param fd       File descriptor open on the data source.
- *                 The caller owns this - we don't close it on destruction.
- */
 FdDataSource::FdDataSource(RingItemFactoryBase* pFactory, int fd) :
     DataSource(pFactory), m_fd(fd)
 {}
 
-/**
- * destructor
- */
 FdDataSource::~FdDataSource() {}
 
-/**
- * getItem
- * @return Undifferentiated ring item dynamically created. nullptr if there's 
- *         no more.
- */
 CRingItem*
 FdDataSource::getItem()
 {
