@@ -19,8 +19,6 @@
  * @brief Simple receive of NSCLDAQ data with or without load balancer.
  */
 
-/** @todo (ASC 1/9/25): Multiple threads for recv, see e2sar_perf.cpp. */
-
 #include <iostream>
 #include <cstddef>
 #include <string>

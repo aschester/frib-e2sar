@@ -235,7 +235,7 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
     /////////////////////////////////////////////////////////////////////////
     // Send loop
     //
-
+    
     auto now = boost::chrono::high_resolution_clock::now();
 
     if (debug) {

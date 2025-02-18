@@ -54,8 +54,8 @@ CFileDataSink::CFileDataSink(int fd)
  * @brief Construct from a file name
  * @details
  * Obtains a file descriptor given a valid pathname. If file doesn't exist
- * a new file is opened with RDWR permissions. If the file 
- * doesn't exist, it is created with read/write permissions. 
+ * a new file is opened with RDWR permissions. If the file exists, its contents
+ * are overwritten.
  *
  * @param fname A file descriptor to define the sink
  *
@@ -70,9 +70,9 @@ CFileDataSink::CFileDataSink(std::string fname)
     : m_fd(-1)
 {
     // Open or create if the file doesn't exist
-    m_fd = open(fname.c_str(),O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR );
+    m_fd = open(fname.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
     // check to see if failed
-    if (m_fd==-1) {
+    if (m_fd == -1) {
 	std::string errmsg("CFileDataSink::CFileDataSink(std::string)");
 	errmsg += " failed to open file ";
 	errmsg += fname;
