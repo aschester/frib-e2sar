@@ -19,6 +19,11 @@
  * @brief Send NSCLDAQ data through E2SAR.
  */
 
+/** 
+ * @todo (ASC 2/19/25): Better query of LB status if/when we have an 
+ * admin token.
+ */
+
 #include <iostream>
 #include <cstddef>
 #include <string>
@@ -171,7 +176,7 @@ getOpts(int ac, char* av[])
 }
 
 /** 
- * @brief Callback function to return a buffer to the pool .
+ * @brief Callback function to return a buffer to the pool.
  * @param a Buffer to free and return.
  */
 void
@@ -179,154 +184,6 @@ freeBuffer(boost::any a)
 {
     auto p = boost::any_cast<u_int8_t*>(a);
     evtBufQueue.push(p);
-}
-
-/**
- * @breif Add data to the send queue and send it.
- * @param s References our segmenter instance.
- * @param pSource Pointer to data source where we get ring items.
- * @param nEvents Number of events to send.
- * @param evtBufSize Size of each event buffer, must be big enough to hold a 
- *   single ring item.
- * @param rateGbps Send rate in Gbps (optional, default=1.0)
- * @param debug Show debugging output (optional, default=false)
- * @return EXIT_SUCCESS if successful, E2SAR error otherwise
- */
-result<int>
-sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
-	   size_t evtBufSize, float rateGbps=1.0, bool debug=false)
-{
-    // Convert bit rate to event rate. Sleep at least 1 us between sends:
-    
-    float eventRate{rateGbps*1000000000/(evtBufSize*8)};
-    u_int64_t interEventSleepUsec{
-	static_cast<u_int64_t>(evtBufSize*8/(rateGbps*1000))
-    };
-    if (interEventSleepUsec == 0) { // Max send rate 1 MHz
-	interEventSleepUsec = 1;
-    }			 
-
-    std::cout.imbue(std::locale(""));
-    std::cout << "Sending bit rate is " << rateGbps << " Gbps" << std::endl;
-    std::cout << "Event size is " << evtBufSize << " bytes or "
-	      << evtBufSize*8 << " bits" << std::endl;
-    std::cout << "Event rate is " << eventRate << " Hz" << std::endl;
-    std::cout << "Inter-event sleep time is " << interEventSleepUsec
-	      << " microseconds" << std::endl;
-    std::cout << "Sending " << nEvents << " event buffers" << std::endl;
-    std::cout << "Using MTU " << s.getMTU() << std::endl;
-
-   // Start threads, open sockets. Start sending sync packets:
-    
-    auto rv = s.openAndStart();    
-    if (rv.has_error()) {
-	std::cerr << "Failed to start Segmenter: "
-		  << rv.error().message() << std::endl;
-        return rv;
-    } else {
-	std::cout << "Segmenter started OK\n";
-    }	
-
-    // Sleep to allow small number of frames to leave:
-    
-    boost::chrono::seconds duration(1);
-    boost::this_thread::sleep_for(duration);
-
-    /////////////////////////////////////////////////////////////////////////
-    // Send loop
-    //
-    
-    auto now = boost::chrono::high_resolution_clock::now();
-
-    if (debug) {
-	std::cout << "Starting send loop at: " << now << std::endl;
-    }
-       
-    int remaining = nEvents;    
-    while (1) {
-	u_int8_t* evtBuf{nullptr};
-	
-	if (!evtBufQueue.pop(evtBuf)) {
-	    evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
-	}
-
-	std::unique_ptr<::ufmt::CRingItem> pItem(pSource->getItem());
-	
-	if (!pItem.get()) { // End of source.
-	    break;
-	}
-	
-	// Extract information from the event, copy it into the event buffer,
-	// and add it to the send queue. Event number is timestamp, data Id
-	// is the source Id. In the case no body header is present, the
-	// event timestamp is UINT64_MAX and the data Id is 0.
-
-	EventNum_t evtNumber  = UINT64_MAX;
-	u_int16_t  dataId     = 0;
-	uint32_t   evtBufSize = pItem->size();
-	u_int16_t  entropy    = 0;
-	
-	if (pItem->hasBodyHeader()) {
-	    evtNumber = pItem->getEventTimestamp();
-	    dataId = pItem->getSourceId();
-	}
-	
-	memcpy(evtBuf, pItem->getItemPointer(), evtBufSize);
-	
-	if (debug) {
-	    std::cout << "Sending event:" << std::endl;
-	    std::cout << "\tevtNumber:  " << evtNumber << std::endl;
-	    std::cout << "\tdataId:     " << dataId << std::endl;
-	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
-	    std::cout << pItem->toString() << std::endl;
-	}
-	    
-	rv = s.addToSendQueue(evtBuf, evtBufSize, evtNumber, dataId,
-					 entropy, &freeBuffer, evtBuf);
-	if (rv.has_error()) {
-	    std::cout << rv.error().message() << std::endl;
-	    continue;
-	}
-	
-	if (nEvents != 0) {
-	    remaining--;
-	    if (remaining <= 0) {
-		break;
-	    }
-	}
-	
-	auto until = now + boost::chrono::microseconds(interEventSleepUsec);
-	if (now > until)
-	{
-	    return E2SARErrorInfo{E2SARErrorc::LogicError, 
-		"Clock overrun, either event buffer length too short or "
-		"requested sending rate too high"};
-	}
-	boost::this_thread::sleep_until(until);
-	
-    } // End of send loop
-
-    // Free the backlog of unused buffers:
-	
-    u_int8_t* item{nullptr};
-    while (evtBufQueue.pop(item)) {
-	evtBufPool->free(item);
-    }
-    evtBufPool->purge_memory();
-
-    // Done sending events, report:
-   
-    auto stats = s.getSendStats();
-
-    std::cout << "Completed, " << stats.get<0>() << " frames sent, "
-	      << stats.get<1>() << " errors" << std::endl;
-    if (stats.get<1>() != 0)
-    {
-        std::cout << "Last error encountered: "
-		  << strerror(stats.get<2>()) << std::endl;
-    }
-    
-    return EXIT_SUCCESS;
 }
 
 /**
@@ -376,6 +233,155 @@ makeDataSource(RingItemFactoryBase* pFactory, const std::string& strUrl)
 }
 
 /**
+ * @breif Add data to the send queue and send it.
+ * @param s References our Segmenter instance.
+ * @param pSource Pointer to data source where we get ring items.
+ * @param nEvents Number of events to send.
+ * @param evtBufSize Size of each event buffer, must be big enough to hold a 
+ *   single ring item.
+ * @param rateGbps Send rate in Gbps (optional, default=1.0)
+ * @param debug Show debugging output (optional, default=false)
+ * @return EXIT_SUCCESS if successful, E2SAR error otherwise
+ */
+result<int>
+sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
+	   size_t evtBufSize, float rateGbps=1.0, bool debug=false)
+{
+    // Convert bit rate to event rate. Sleep at least 1 us between sends:
+    
+    float eventRate{rateGbps*1000000000/(evtBufSize*8)};
+    u_int64_t interEventSleepUsec{
+	static_cast<u_int64_t>(evtBufSize*8/(rateGbps*1000))
+    };
+    if (interEventSleepUsec == 0) { // Max send rate 1 MHz
+	interEventSleepUsec = 1;
+    }			 
+
+    std::cout.imbue(std::locale(""));
+    std::cout << "Sending bit rate is " << rateGbps << " Gbps" << std::endl;
+    std::cout << "Event size is " << evtBufSize << " bytes or "
+	      << evtBufSize*8 << " bits" << std::endl;
+    std::cout << "Event rate is " << eventRate << " Hz" << std::endl;
+    std::cout << "Inter-event sleep time is " << interEventSleepUsec
+	      << " microseconds" << std::endl;
+    std::cout << "Sending " << nEvents << " event buffers" << std::endl;
+    std::cout << "Using MTU " << s.getMTU() << std::endl;
+
+    // Start threads, open sockets. Start sending sync packets:
+    
+    auto rv = s.openAndStart();    
+    if (rv.has_error()) {
+	std::cerr << "Failed to start Segmenter: "
+		  << rv.error().message() << std::endl;
+        return rv;
+    } else {
+	std::cout << "Segmenter started OK\n";
+    }	
+
+    // Sleep to allow small number of frames to leave:
+    
+    boost::chrono::seconds duration(1);
+    boost::this_thread::sleep_for(duration);
+
+    /////////////////////////////////////////////////////////////////////////
+    // Send loop
+    //
+
+    u_int8_t* evtBuf{nullptr}; // Buffer from pool - fill and send.
+    
+    auto now = boost::chrono::high_resolution_clock::now();
+    
+    if (debug) {
+	std::cout << "Starting send loop at: " << now << std::endl;
+    }
+   
+    int remaining = nEvents;
+    while (1) {	
+	if (!evtBufQueue.pop(evtBuf)) {
+	    evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
+	}
+
+	std::unique_ptr<::ufmt::CRingItem> pItem(pSource->getItem());
+	
+	if (!pItem.get()) { // End of source.
+	    break;
+	}
+	
+	// Extract information from the event, copy it into the event buffer,
+	// and add it to the send queue. Event number is timestamp, data Id
+	// is the source Id. In the case no body header is present, the
+	// event timestamp is UINT64_MAX and the data Id is 0.
+
+	EventNum_t evtNumber  = UINT64_MAX;
+	u_int16_t  dataId     = 0;
+	uint32_t   evtBufSize = pItem->size();
+	u_int16_t  entropy    = 0;
+	
+	if (pItem->hasBodyHeader()) {
+	    evtNumber = pItem->getEventTimestamp();
+	    dataId = pItem->getSourceId();
+	}
+	
+	memcpy(evtBuf, pItem->getItemPointer(), evtBufSize);
+	
+	if (debug) {
+	    std::cout << "Sending event:" << std::endl;
+	    std::cout << "\tevtNumber:  " << evtNumber << std::endl;
+	    std::cout << "\tdataId:     " << dataId << std::endl;
+	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
+	    std::cout << "\titem type:  " << pItem->type() << std::endl;
+	    std::cout << pItem->toString() << std::endl;
+	}
+	    
+	rv = s.addToSendQueue(evtBuf, evtBufSize, evtNumber, dataId,
+			      entropy, &freeBuffer, evtBuf);
+	if (rv.has_error()) {
+	    std::cout << rv.error().message() << std::endl;
+	    continue;
+	}
+	
+	if (nEvents != 0) {
+	    remaining--;
+	    if (remaining <= 0) {
+		break;
+	    }
+	}
+	
+	auto until = now + boost::chrono::microseconds(interEventSleepUsec);
+	if (now > until)
+	{
+	    return E2SARErrorInfo{E2SARErrorc::LogicError, 
+		"Clock overrun, either event buffer length too short or "
+		"requested sending rate too high"};
+	}
+	boost::this_thread::sleep_until(until);
+	
+    } // End of send loop
+
+    // Free the backlog of unused buffers:
+	
+    u_int8_t* item{nullptr};
+    while (evtBufQueue.pop(item)) {
+	evtBufPool->free(item);
+    }
+    evtBufPool->purge_memory();
+
+    // Done sending events, report:
+   
+    auto stats = s.getSendStats();
+
+    std::cout << "Completed, " << stats.get<0>() << " frames sent, "
+	      << stats.get<1>() << " errors" << std::endl;
+    if (stats.get<1>() != 0)
+    {
+        std::cout << "Last error encountered: "
+		  << strerror(stats.get<2>()) << std::endl;
+    }
+    
+    return EXIT_SUCCESS;
+}
+
+/**
  * @brief Send main. Create a data source and Segmenter; send data.
  */
 int
@@ -400,7 +406,7 @@ main(int argc, char* argv[])
 
 	auto srcName = opts["source"].as<std::string>();
 	std::unique_ptr<DataSource> pSource(makeDataSource(&factory, srcName));
-    
+
 	/////////////////////////////////////////////////////////////////////
 	// Configure E2SAR
 	///
@@ -463,34 +469,32 @@ main(int argc, char* argv[])
 	    }
 	    std::cout << std::endl;
 
-	    auto rv = lbmPtr->addSenders(senders);
+	    auto rv_as = lbmPtr->addSenders(senders);
 
-	    if (rv.has_error()) {
-		std::cerr << "Unable to add sender: "  << rv.error().message()
-			  << std::endl;
+	    if (rv_as.has_error()) {
+		std::cerr << "Unable to add sender: "
+			  << rv_as.error().message() << std::endl;
 		std::cerr << "Exiting...\n";
 		shutdown();
 		std::exit(EXIT_FAILURE);
 	    }
 	    
-	    if (debug) {		
-		auto uriStr
-		    = lbmPtr->get_URI().to_string(EjfatURI::TokenType::session);
-		auto addrStr = lbmPtr->get_AddrString();
-		auto lbId = lbmPtr->get_URI().get_lbId();
+	    auto uriStr	= lbmPtr->get_URI().to_string(
+		EjfatURI::TokenType::session);
+	    auto addrStr = lbmPtr->get_AddrString();
+	    auto lbId = lbmPtr->get_URI().get_lbId();
 		    
-		std::cout << "Getting LB status:" << std::endl;
-		std::cout << "\tContacting: " << uriStr
-			  << " using address: " << addrStr
-			  << std::endl;
-		std::cout << "\tLB ID: " << lbId << std::endl;
-	    }	    
+	    std::cout << "Getting LB status:" << std::endl;
+	    std::cout << "\tContacting: " << uriStr
+		      << " using address: " << addrStr
+		      << std::endl;
+	    std::cout << "\tLB ID: " << lbId << std::endl;
 	}	
 	
 	Segmenter seg(uri, dataId, evtSourceId, flags);
 	segPtr = &seg;
 	auto rv = sendEvents(seg, pSource.get(), nEvents,
-			evtBufSize, rateGbps, debug);
+			     evtBufSize, rateGbps, debug);
 	if (rv.has_error()) {
 	    std::cerr << "Segmenter encountered an error: "
 		      << rv.error().message() << std::endl;

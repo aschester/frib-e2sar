@@ -168,17 +168,18 @@ prepareToReceive(Reassembler* r)
 
     // Worker registration is NOP if not using control plane:
     
-    auto hostrv = NetUtil::getHostName();
-    if (hostrv.has_error()) 
+    auto rv_hname = NetUtil::getHostName();
+    if (rv_hname.has_error()) 
     {
-        return E2SARErrorInfo{hostrv.error().code(), hostrv.error().message()};
+        return E2SARErrorInfo{rv_hname.error().code(),
+	    rv_hname.error().message()};
     }
     
-    auto regrv = r->registerWorker(hostrv.value());
-    if (regrv.has_error())
+    auto rv_reg = r->registerWorker(rv_hname.value());
+    if (rv_reg.has_error())
     {
 	std::string msg("Unable to register worker node: ");
-	msg += regrv.error().message();
+	msg += rv_reg.error().message();
         return E2SARErrorInfo{E2SARErrorc::RPCError, msg};
     }
 
@@ -189,9 +190,9 @@ prepareToReceive(Reassembler* r)
     // tries to send queue updates, however the session token is not yet
     // available...
     
-    auto oasrv = r->openAndStart();
-    if (oasrv.has_error()) {
-        return oasrv;
+    auto rv_oas = r->openAndStart();
+    if (rv_oas.has_error()) {
+        return rv_oas;
     }
     
     return EXIT_SUCCESS;
@@ -221,7 +222,7 @@ recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
     // with blocking calls to receive data. The extent of good data for a
     // particular event is defined by evtBufSize.
     
-    u_int8_t*  evtBuf{nullptr}; // Event buffer
+    u_int8_t*  evtBuf{nullptr}; // Event buffer for data reads
     size_t     evtBufSize;      // Event buffer size in bytes
     EventNum_t evtNum;          // Event number (typically timestamp)
     u_int16_t  dataId;          // Data Id (source Id or other)
@@ -238,7 +239,7 @@ recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
 	// Blocking receive. Use getEvent() for non-blocking:
 	
 	auto rv = r->recvEvent(&evtBuf, &evtBufSize, &evtNum,
-				   &dataId, waitMs);
+			       &dataId, waitMs);
 	//auto rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
         auto next = boost::chrono::steady_clock::now();
 

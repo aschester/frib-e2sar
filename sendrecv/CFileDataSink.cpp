@@ -46,7 +46,6 @@ CFileDataSink::CFileDataSink(int fd)
 	throw std::string("CFileDataSink::CFileDataSink(int) file descriptor "
 			  "is not write only");
     }
-
 }
 
 
