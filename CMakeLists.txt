@@ -31,6 +31,7 @@ add_subdirectory(utils)
 add_subdirectory(io)
 add_subdirectory(checkdefaults)
 add_subdirectory(sendrecv)
+add_subdirectory(rawdata)
 
 set(ini_files reassembler_config.ini segmenter_config.ini)
 install(FILES ${ini_files} DESTINATION ini)
