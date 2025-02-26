@@ -305,6 +305,7 @@ recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
 	    std::cout << "\tevtNumber:  " << evtNum << std::endl;
 	    std::cout << "\tdataId:     " << dataId << std::endl;
 	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
+	    std::cout << "\titem type:  " << pItem->type() << std::endl;
 	    std::cout << pItem->toString() << std::endl;
 	}
 
@@ -324,47 +325,47 @@ recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
 void
 recvStatsThread(Reassembler *r)
 {
-    std::vector<std::pair<EventNum_t, u_int16_t>> lostEvents;
+    // std::vector<std::pair<EventNum_t, u_int16_t>> lostEvents;
 
-    while(threadsRunning)
-    {
-        auto now = boost::chrono::high_resolution_clock::now();
-        auto stats = r->getStats();
+    // while(threadsRunning)
+    // {
+    //     auto now = boost::chrono::high_resolution_clock::now();
+    //     auto stats = r->getStats();
 
-        while(true)
-        {
-            auto rv = r->get_LostEvent();
-            if (rv.has_error())
-                break;
-            lostEvents.push_back(rv.value());
-        }
+    //     while(true)
+    //     {
+    //         auto rv = r->get_LostEvent();
+    //         if (rv.has_error())
+    //             break;
+    //         lostEvents.push_back(rv.value());
+    //     }
 
-        std::cout << "Stats:" << std::endl;	
-	std::cout << "\tCurrent time: " << pt::second_clock::local_time()
-		  << std::endl;
-        std::cout << "\tEvents Received: " << stats.get<1>() << std::endl;
-        std::cout << "\tEvents Lost: " << stats.get<0>() << std::endl;
-        std::cout << "\tData Errors: " << stats.get<4>() << std::endl;
-        if (stats.get<4>() > 0) {
-            std::cout << "\tLast Data Error: "
-		      << strerror(stats.get<2>()) << std::endl;
-	    std::cout << "\tgRPC Errors: " << stats.get<3>() << std::endl;
-	}
-        if (stats.get<5>() != E2SARErrorc::NoError) {
-            std::cout << "\tLast E2SARError code: "
-		      << stats.get<5>() << std::endl;
-	}
+    //     std::cout << "Stats:" << std::endl;	
+    // 	std::cout << "\tCurrent time: " << pt::second_clock::local_time()
+    // 		  << std::endl;
+    //     std::cout << "\tEvents Received: " << stats.get<1>() << std::endl;
+    //     std::cout << "\tEvents Lost: " << stats.get<0>() << std::endl;
+    //     std::cout << "\tData Errors: " << stats.get<4>() << std::endl;
+    //     if (stats.get<4>() > 0) {
+    //         std::cout << "\tLast Data Error: "
+    // 		      << strerror(stats.get<2>()) << std::endl;
+    // 	    std::cout << "\tgRPC Errors: " << stats.get<3>() << std::endl;
+    // 	}
+    //     if (stats.get<5>() != E2SARErrorc::NoError) {
+    //         std::cout << "\tLast E2SARError code: "
+    // 		      << stats.get<5>() << std::endl;
+    // 	}
 
-        // std::cout << "\tEvents lost so far: ";
-        // for(auto evt: lostEvents)
-        // {
-        //     std::cout << "<" << evt.first << ":" << evt.second << "> ";
-        // }
-        // std::cout << std::endl;
+    //     // std::cout << "\tEvents lost so far: ";
+    //     // for(auto evt: lostEvents)
+    //     // {
+    //     //     std::cout << "<" << evt.first << ":" << evt.second << "> ";
+    //     // }
+    //     // std::cout << std::endl;
 
-        auto until = now + boost::chrono::milliseconds(reportThreadSleepMs);
-        boost::this_thread::sleep_until(until);
-    }
+    //     auto until = now + boost::chrono::milliseconds(reportThreadSleepMs);
+    //     boost::this_thread::sleep_until(until);
+    // }
 }
 
 /**
