@@ -1,31 +1,20 @@
-##
-# E2SAR send-receive programs
-# ASC 10/24/24
-#
-
 project(
   SendRecv VERSION 0.1 DESCRIPTION "Use E2SAR to transmit NSLCDAQ data"
   LANGUAGES CXX
   )
 
-set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-set(CMAKE_INSTALL_RPATH ${UFMT_LIB} ${NSCLDAQ_LIB})
+set(CMAKE_INSTALL_RPATH ${UFMT_LIB} ${NSCLDAQ_LIB} ${CMAKE_INSTALL_PREFIX}/lib)
 
-set(send_exec send)
-set(send_src send.cpp DataSource.cpp FdDataSource.cpp StreamDataSource.cpp
-  FribEjfatUtils.cpp)
-set(send_headers DataSource.h FdDataSource.h StreamDataSource.h
-  FribEjfatUtils.h)
-
-add_executable(${send_exec} ${send_src})
+add_executable(send send.cpp)
 target_include_directories(
-  ${send_exec} PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}
+  send PRIVATE
+  ${CMAKE_SOURCE_DIR}/io
+  ${CMAKE_SOURCE_DIR}/utils
   ${UFMT_INC}
   ${NSCLDAQ_INC}
   )
 target_link_libraries(
-  ${send_exec}
+  send
   ${E2SAR_LIBRARIES}
   ${Boost_LIBRARIES}
   ${GRPC_LIBRARIES}
@@ -38,21 +27,20 @@ target_link_libraries(
   ${UFMT_LIB}/libAbstractFormat.so
   ${NSCLDAQ_LIB}/libException.so
   ${NSCLDAQ_LIB}/liburl.so
+  EjfatIO
+  FribEjfatUtils
   )
 
-set(recv_exec recv)
-set(recv_src recv.cpp CDataSink.cpp CFileDataSink.cpp FribEjfatUtils.cpp)
-set(recv_headers CDataSink.h CFileDataSink.h FribEjfatUtils.h)
-
-add_executable(${recv_exec} ${recv_src})
+add_executable(recv recv.cpp)
 target_include_directories(
-  ${recv_exec} PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}
+  recv PRIVATE
+  ${CMAKE_SOURCE_DIR}/io
+  ${CMAKE_SOURCE_DIR}/utils
   ${UFMT_INC}
   ${NSCLDAQ_INC}
   )
 target_link_libraries(
-  ${recv_exec}
+  recv
   ${E2SAR_LIBRARIES}
   ${Boost_LIBRARIES}
   ${GRPC_LIBRARIES}
@@ -64,8 +52,8 @@ target_link_libraries(
   ${UFMT_LIB}/libV12Format.so
   ${UFMT_LIB}/libAbstractFormat.so
   ${NSCLDAQ_LIB}/libException.so
+  EjfatIO
+  FribEjfatUtils
   )
 
-install(FILES ${send_headers} DESTINATION include)
-install(FILES ${recv_headers} DESTINATION include)
-install(TARGETS ${send_exec} ${recv_exec} DESTINATION bin)
+install(TARGETS send recv DESTINATION bin/sendrecv)

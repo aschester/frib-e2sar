@@ -1,8 +1,3 @@
-##
-# Build a bunch of E2SAR examples
-# ASC 11/08/24
-#
-
 cmake_minimum_required(VERSION 3.18)
 project(E2SAR_Examples VERSION 0.1 DESCRIPTION "E2SAR Examples" LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
@@ -32,6 +27,8 @@ message(STATUS "Using NSCLDAQ unified format: ${UFMT_ROOT}")
 
 add_compile_options(-g -O2 -Wall)
 
+add_subdirectory(utils)
+add_subdirectory(io)
 add_subdirectory(checkdefaults)
 add_subdirectory(sendrecv)
 

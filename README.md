@@ -18,13 +18,13 @@ A Docker container based on Debian 11 (Bullseye) with preinstalled E2SAR binarie
 
 ```
 mkdir build && cd build
-cmake .. -DNSCLDAQ_ROOT=/path/to/nscldaq/dir
+cmake .. -DNSCLDAQ_ROOT=/path/to/nscldaq/dir -DCMAKE_INSTALL_PREFIX=/path/to/install/dir
 cmake --build .
-cmake --install . --prefix "/path/to/installation/dir"
+cmake --install .
 ```
 
 - You can override the default unified format path by setting an alternative during the first stage of the build with `-DUFMT_ROOT=/path/to/ufmt`.
-- To build in parallel, use the `-j` flag: `cmake --build . -j N` where `N` is the number of cores you'd like to use.
+- 
 
 ## Running the examples
 

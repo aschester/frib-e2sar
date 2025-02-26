@@ -1,8 +1,3 @@
-##
-# An example CMakeLists.txt for E2SAR
-# ASC 10/24/24
-#
-
 cmake_minimum_required(VERSION 3.18)
 project(
   CheckDefaults VERSION 0.1 DESCRIPTION "E2SAR check defaults" LANGUAGES CXX
@@ -20,4 +15,4 @@ target_link_libraries(
   Threads::Threads
   )
 
-install(TARGETS checkdefaults DESTINATION bin)
+install(TARGETS checkdefaults DESTINATION bin/checkdefaults)
