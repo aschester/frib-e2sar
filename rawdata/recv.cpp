@@ -16,13 +16,15 @@
 
 /** 
  * @file recv.cpp
- * @brief Simple receive of NSCLDAQ data with or without load balancer.
+ * @brief Receiver for raw data in evb pipeline.
  */
 
 #include <iostream>
 #include <cstddef>
 #include <string>
 #include <csignal>
+#include <stdexcept>
+#include <sstream>
 
 #include <boost/program_options.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -35,6 +37,7 @@
 #include <DataFormat.h>
 #include <RingItemFactoryBase.h>
 #include <CRingItem.h>
+#include <URL.h>
 
 // Other NSCLDAQ headers:
 
@@ -42,9 +45,10 @@
 
 // Project headers:
 
-#include "CDataSink.h"
-#include "CFileDataSink.h"
-#include "FribEjfatUtils.h"
+#include <CDataSink.h>
+#include <CFileDataSink.h>
+#include <CRingDataSink.h>
+#include <FribEjfatUtils.h>
 
 namespace po = boost::program_options;
 namespace pt = boost::posix_time;
@@ -122,6 +126,9 @@ getOpts(int ac, char* av[])
 	("sink,S",
 	 po::value<std::string>()->required(),
 	 "path to output file data sink (*not* a URI)")
+	("sink-format,f",
+	 po::value<std::string>()->default_value("ring"),
+	 "sink format (ringbuffer or file)")
 	("threads,t",
 	 po::value<size_t>()->default_value(1),
 	 "number of reassembler threads")
@@ -199,9 +206,39 @@ prepareToReceive(Reassembler* r)
 }
 
 /**
+ * @brief Create data sink where output is written.
+ * @param name Name of the sink.
+ * @param fmt Sink format (ringbuffer or file)
+ * @throw std::runtime_error If the sink format is not known.
+ * @return Pointer to created data sink.
+ * @todo (ASC 2/28/25): Should be protocol-based, not a format flag. Need to 
+ * modify concrete sink classes to include a constructor from URL.
+ */
+CDataSink*
+makeDataSink(std::string name, std::string fmt)
+{
+    // FILE, rIng, RiNgBuffER nonsense also works:
+    
+    std::transform(name.begin(), name.end(), name.begin(),
+		   [](unsigned char c){ return std::tolower(c); });
+    
+    if (fmt == "file") {
+	return new CFileDataSink(name);
+    } else if (fmt == "ring" || fmt == "ringbuffer" || fmt == "tcp") {
+	return new CRingDataSink(name);
+    } else {
+	std::stringstream msg;
+	msg << "Unrecognized sink format '" << fmt << "'. Supported formats:\n"
+	    << "\t'file' for writing to a file\n"
+	    << "\t'ring,' 'ringbuffer,' or 'tcp' for writing to ring";
+	throw std::runtime_error(msg.str());
+    }
+}
+
+/**
  * @brief Receive and reassemble events.
  * @param r Pointer to our Reassembler instance.
- * @param pSink Pointer to the (for now always a file) data sink we write to.
+ * @param pSink Pointer to the data sink we write to.
  * @param factory Factory for creating formatted ring items.
  * @param durationSec Listening duration; if 0, listen forever.
  * @param debug Enable debugging output.
@@ -238,9 +275,10 @@ recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
     {	
 	// Blocking receive. Use getEvent() for non-blocking:
 	
-	auto rv = r->recvEvent(&evtBuf, &evtBufSize, &evtNum,
-			       &dataId, waitMs);
-	//auto rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
+	// auto rv = r->recvEvent(&evtBuf, &evtBufSize, &evtNum,
+	// 		       &dataId, waitMs);
+	auto rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
+	
         auto next = boost::chrono::steady_clock::now();
 
 	// If duration is set stop listening after that time and exit.
@@ -266,7 +304,7 @@ recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
 	// on the remaining size after the header sizes are subtracted and
 	// then do byte-by-byte copy of the buffer into the ring item body.
 	///
-
+	
 	u_int8_t* p = evtBuf;         // Pointer to first byte of evtBuf.
 	size_t bodySize = evtBufSize; // In bytes.
 	
@@ -285,7 +323,6 @@ recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
 	}	
 	p += bodyHdrSize;
 	bodySize -= bodyHdrSize; // Whatever is left is the payload.
-
 	std::unique_ptr<CRingItem> pItem(
 	    factory.makeRingItem(pHdr->s_type, bodySize)
 	    );
@@ -296,17 +333,19 @@ recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
 	}	
 	u_int8_t* pBody = reinterpret_cast<u_int8_t*>(pItem->getBodyCursor());
 	memcpy(pBody, p, bodySize);
-	pBody += bodySize;	    
+	pBody += bodySize;	
 	pItem->setBodyCursor(pBody);
 	pItem->updateSize();
 		
 	if (debug) {
-	    std::cout << "Receive event:" << std::endl;
-	    std::cout << "\tevtNumber:  " << evtNum << std::endl;
-	    std::cout << "\tdataId:     " << dataId << std::endl;
-	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
-	    std::cout << "\titem type:  " << pItem->type() << std::endl;
-	    std::cout << pItem->toString() << std::endl;
+	    std::cout << "Receive event: " << std::endl;
+	    std::cout << "\tevtNumber:   " << evtNum << std::endl;
+	    std::cout << "\tdataId:      " << dataId << std::endl;
+	    std::cout << "\tevtBufSize:  " << evtBufSize << std::endl;
+	    std::cout << "\titem type:   " << pItem->type() << std::endl;
+	    std::cout << "\tbodySize:    " << bodySize << std::endl;
+	    std::cout << "\tbodyHdrSize: " << bodyHdrSize << std::endl;
+	    //std::cout << pItem->toString() << std::endl;
 	}
 
 	pSink->putItem(*pItem.get());
@@ -389,8 +428,9 @@ main(int argc, char* argv[])
 	auto& factory = FormatSelector::selectFactory(version);
 	
 	auto name = opts["sink"].as<std::string>();
-	std::unique_ptr<CFileDataSink> pSink(new CFileDataSink(name));
-	
+	auto sinkFmt = opts["sink-format"].as<std::string>();
+	std::unique_ptr<CDataSink> pSink(makeDataSink(name, sinkFmt));
+		
 	/////////////////////////////////////////////////////////////////////
 	// Configure E2SAR
 	///
@@ -452,13 +492,17 @@ main(int argc, char* argv[])
 	shutdown(); // Shutdown if duration is not infinite.
 	       
     } catch (E2SARException &e) {
-	std::cerr << "Unable to create reassembler: "
+	std::cerr << "E2SAR exception: "
 		  << static_cast<std::string>(e) << std::endl;
 	exit(EXIT_FAILURE);
     }
     catch (CException& e) {
-	std::cerr << "Failed to create data sink: "
+	std::cerr << "NSCLDAQ exception: "
 		  << e.ReasonText() << std::endl;
+	return EXIT_FAILURE;
+    } catch (std::exception& e) {
+	std::cerr << "C++ exception: "
+		  << e.what() << std::endl;
 	return EXIT_FAILURE;
     }
     

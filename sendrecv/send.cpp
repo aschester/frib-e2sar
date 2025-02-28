@@ -296,7 +296,10 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
     }
    
     int remaining = nEvents;
-    while (1) {	
+    while (1) {
+	
+	now = boost::chrono::high_resolution_clock::now();
+	
 	if (!evtBufQueue.pop(evtBuf)) {
 	    evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
 	}
@@ -354,17 +357,19 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 		"Clock overrun, either event buffer length too short or "
 		"requested sending rate too high"};
 	}
+
+	// Free the backlog of unused buffers:
+	
+	u_int8_t* item{nullptr};
+	while (evtBufQueue.pop(item)) {
+	    evtBufPool->free(item);
+	}
+
+	// Wait to send next event:
+    
 	boost::this_thread::sleep_until(until);
 	
     } // End of send loop
-
-    // Free the backlog of unused buffers:
-	
-    u_int8_t* item{nullptr};
-    while (evtBufQueue.pop(item)) {
-	evtBufPool->free(item);
-    }
-    evtBufPool->purge_memory();
 
     // Done sending events, report:
    
@@ -377,6 +382,8 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
         std::cout << "Last error encountered: "
 		  << strerror(stats.get<2>()) << std::endl;
     }
+
+    evtBufPool->purge_memory();
     
     return EXIT_SUCCESS;
 }

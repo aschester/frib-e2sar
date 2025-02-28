@@ -5,9 +5,12 @@ project(
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-add_executable(checkdefaults checkdefaults.cpp)
+set(exec checkdefaults)
+set(src checkdefaults.cpp)
+
+add_executable(${exec} ${src})
 target_link_libraries(
-  checkdefaults
+  ${exec}
   ${E2SAR_LIBRARIES}
   ${Boost_LIBRARIES}
   ${GRPC_LIBRARIES}
@@ -15,4 +18,4 @@ target_link_libraries(
   Threads::Threads
   )
 
-install(TARGETS checkdefaults DESTINATION bin/checkdefaults)
+install(TARGETS ${exec} DESTINATION bin/checkdefaults)

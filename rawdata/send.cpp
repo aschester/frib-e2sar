@@ -16,7 +16,7 @@
 
 /** 
  * @file send.cpp
- * @brief Send NSCLDAQ data through E2SAR.
+ * @brief Send raw NSCLDAQ data through E2SAR.
  */
 
 /** 
@@ -59,10 +59,10 @@
 
 // Project headers:
 
-#include "DataSource.h"
-#include "FdDataSource.h"
-#include "StreamDataSource.h"
-#include "FribEjfatUtils.h"
+#include <DataSource.h>
+#include <FdDataSource.h>
+#include <StreamDataSource.h>
+#include <FribEjfatUtils.h>
 
 namespace po = boost::program_options;
 using namespace e2sar;
@@ -200,7 +200,7 @@ freeBuffer(boost::any a)
  *   If needed, create a pipe to read from stdin.
  */
 DataSource*
-makeDataSource(RingItemFactoryBase* pFactory, const std::string& strUrl)
+makeDataSource(RingItemFactoryBase* pFactory, std::string strUrl)
 {
     // Special case the url is just "-" then it's stdin, a file descriptor
     // data source:
@@ -266,7 +266,7 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 	      << " microseconds" << std::endl;
     std::cout << "Sending " << nEvents << " event buffers" << std::endl;
     std::cout << "Using MTU " << s.getMTU() << std::endl;
-
+    
     // Start threads, open sockets. Start sending sync packets:
     
     auto rv = s.openAndStart();    
@@ -283,6 +283,11 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
     boost::chrono::seconds duration(1);
     boost::this_thread::sleep_for(duration);
 
+    // Create our buffer pool:
+	
+    evtBufPool = new boost::pool<>{evtBufSize};
+
+    
     /////////////////////////////////////////////////////////////////////////
     // Send loop
     //
@@ -294,34 +299,50 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
     if (debug) {
 	std::cout << "Starting send loop at: " << now << std::endl;
     }
-   
-    int remaining = nEvents;
-    while (1) {	
+
+    // Data we set for each event:
+    
+    EventNum_t evtNumber = 0; // Iterate on send.
+    u_int16_t  dataId    = 0; // Default.
+    u_int16_t  entropy   = 0; // Default.
+    
+    while (1) {
+	
+	now = boost::chrono::high_resolution_clock::now();
+	
 	if (!evtBufQueue.pop(evtBuf)) {
 	    evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
 	}
 
-	std::unique_ptr<::ufmt::CRingItem> pItem(pSource->getItem());
+	std::unique_ptr<CRingItem> pItem(pSource->getItem());
 	
 	if (!pItem.get()) { // End of source.
 	    break;
 	}
 	
+	/////////////////////////////////////////////////////////////////////
 	// Extract information from the event, copy it into the event buffer,
-	// and add it to the send queue. Event number is timestamp, data Id
-	// is the source Id. In the case no body header is present, the
-	// event timestamp is UINT64_MAX and the data Id is 0.
-
-	EventNum_t evtNumber  = UINT64_MAX;
-	u_int16_t  dataId     = 0;
-	uint32_t   evtBufSize = pItem->size();
-	u_int16_t  entropy    = 0;
-	
-	if (pItem->hasBodyHeader()) {
-	    evtNumber = pItem->getEventTimestamp();
-	    dataId = pItem->getSourceId();
-	}
-	
+	// and add it to the send queue. The ring item body of a physics event 
+	// has the following contents:
+	//
+	// +-------------------------------------------------------+
+	// | uint32_t - Size of the body in 16 bit words           |
+	// +-------------------------------------------------------+
+	// | uint32_t - Module ID (bit 21 set: use external clock) |
+	// +-------------------------------------------------------+
+	// | double   - Clock scale factor                         |
+	// +-------------------------------------------------------+
+	// | Soup of hits as they come from the module             |
+	// | ...                                                   |
+	// +-------------------------------------------------------+
+	// 
+	// Note that there is no body header for raw data, so we set the
+	// event number manually rather than using the event's timestamp
+	// value. We cannot use the Segmenter's internal counter because
+	// we need to supply a callback function to manage our buffer pool.
+	///
+	    
+	uint32_t evtBufSize = pItem->size(); // Bytes.
 	memcpy(evtBuf, pItem->getItemPointer(), evtBufSize);
 	
 	if (debug) {
@@ -330,7 +351,7 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 	    std::cout << "\tdataId:     " << dataId << std::endl;
 	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
 	    std::cout << "\titem type:  " << pItem->type() << std::endl;
-	    std::cout << pItem->toString() << std::endl;
+	    //std::cout << pItem->toString() << std::endl;
 	}
 	    
 	rv = s.addToSendQueue(evtBuf, evtBufSize, evtNumber, dataId,
@@ -339,12 +360,15 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 	    std::cout << rv.error().message() << std::endl;
 	    continue;
 	}
+
+	// Done with this iteration:
 	
-	if (nEvents != 0) {
-	    remaining--;
-	    if (remaining <= 0) {
-		break;
-	    }
+	evtNumber++;
+
+	// Check if we've hit a limit:
+	
+	if (nEvents != 0 && evtNumber == nEvents) {
+	    break;
 	}
 	
 	auto until = now + boost::chrono::microseconds(interEventSleepUsec);
@@ -354,29 +378,33 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 		"Clock overrun, either event buffer length too short or "
 		"requested sending rate too high"};
 	}
-	boost::this_thread::sleep_until(until);
-	
-    } // End of send loop
 
-    // Free the backlog of unused buffers:
+	// Free the backlog of unused buffers:
 	
-    u_int8_t* item{nullptr};
-    while (evtBufQueue.pop(item)) {
-	evtBufPool->free(item);
-    }
-    evtBufPool->purge_memory();
+	u_int8_t* item{nullptr};
+	while (evtBufQueue.pop(item)) {
+	    evtBufPool->free(item);
+	}
+
+	// Wait to send next event:
+	
+	boost::this_thread::sleep_until(until);
+		
+    } // End of send loop
 
     // Done sending events, report:
    
-    auto stats = s.getSendStats();
-
-    std::cout << "Completed, " << stats.get<0>() << " frames sent, "
+    auto stats = s.getSendStats();    
+    std::cout << "Completed, " << evtNumber << " events, "
+	      << stats.get<0>() << " frames sent, "
 	      << stats.get<1>() << " errors" << std::endl;
     if (stats.get<1>() != 0)
     {
         std::cout << "Last error encountered: "
 		  << strerror(stats.get<2>()) << std::endl;
     }
+
+    evtBufPool->purge_memory();
     
     return EXIT_SUCCESS;
 }
@@ -450,7 +478,7 @@ main(int argc, char* argv[])
 
 	// Create our buffer pool:
 	
-	evtBufPool = new boost::pool<>{evtBufSize};
+	//evtBufPool = new boost::pool<>{evtBufSize};
 
 	// Configure control plane (if used):
 
@@ -502,13 +530,13 @@ main(int argc, char* argv[])
 	}
 
     }
-    catch (std::invalid_argument& e) {
-	std::cerr << "Failed to create data source: " << e.what() << std::endl;
+    catch (std::exception& e) {
+	std::cerr << "C++ exception: " << e.what() << std::endl;
 	shutdown();
 	exit(EXIT_FAILURE);
     }
     catch (const E2SARException& e) {
-	std::cerr << "Unable to create segmenter: "
+	std::cerr << "E2SAR exception: "
 		  << static_cast<std::string>(e) << std::endl;
 	shutdown();
 	exit(EXIT_FAILURE);

@@ -6,14 +6,18 @@ project(
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 set(CMAKE_INSTALL_RPATH ${UFMT_LIB})
 
-add_library(FribEjfatUtils SHARED FribEjfatUtils.cpp)
+set(src FribEjfatUtils.cpp)
+set(headers FribEjfatUtils.h)
+set(lib FribEjfatUtils)
 
-target_include_directories(FribEjfatUtils PUBLIC
+add_library(${lib} STATIC ${src})
+
+target_include_directories(${lib} PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${UFMT_INC}
 )
 target_link_libraries(
-  FribEjfatUtils
+  ${lib}
   ${E2SAR_LIBRARIES}
   ${Boost_LIBRARIES}
   ${GRPC_LIBRARIES}
@@ -21,7 +25,7 @@ target_link_libraries(
   Threads::Threads
   )
 
-set_target_properties(FribEjfatUtils PROPERTIES EXPORT_NAME FribEjfatUtils)
+set_target_properties(${lib} PROPERTIES EXPORT_NAME ${lib})
 
-install(TARGETS FribEjfatUtils DESTINATION lib)
-install(FILES FribEjfatUtils.h DESTINATION include)
+install(TARGETS ${lib} DESTINATION lib)
+install(FILES ${headers} DESTINATION include)

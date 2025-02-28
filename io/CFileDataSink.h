@@ -26,12 +26,8 @@
 
 #include <CErrnoException.h>
 
-namespace ufmt {
-    class CRingItem;
-}
-
 /**
- * @brief A "file" data sink
+ * @brief A "file" data sink.
  * @details
  * Owns and manages a general file object. The user should
  * prefer constructing from a filename rather than a file

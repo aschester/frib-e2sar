@@ -3,7 +3,7 @@ project(
   LANGUAGES CXX
   )
 
-set(CMAKE_INSTALL_RPATH ${UFMT_LIB} ${NSCLDAQ_LIB} ${CMAKE_INSTALL_PREFIX}/lib)
+set(CMAKE_INSTALL_RPATH ${UFMT_LIB} ${NSCLDAQ_LIB})
 
 set(send_exec send_sendrecv)
 set(send_src send.cpp)
