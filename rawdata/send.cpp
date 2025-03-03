@@ -16,15 +16,13 @@
 
 /** 
  * @file send.cpp
- * @brief Send NSCLDAQ data through E2SAR.
+ * @brief Send raw NSCLDAQ data through E2SAR.
  */
 
 /** 
  * @todo (ASC 2/19/25): Better query of LB status if/when we have an 
  * admin token.
  */
-
-#include <unistd.h>
 
 #include <iostream>
 #include <cstddef>
@@ -38,10 +36,9 @@
 #include <e2sar.hpp>
 #include <e2sarDPSegmenter.hpp>
 
-// Unified format library:
+// NSCLDAQ headers:
 
 #include <DataFormat.h>
-#include <RingItemFactoryBase.h>
 #include <CRingItem.h>
 #include <CAbnormalEndItem.h>
 #include <CDataFormatItem.h>
@@ -53,24 +50,18 @@
 #include <CRingTextItem.h>
 #include <CRingStateChangeItem.h>
 #include <CUnknownFragment.h>
-
-// Other NSCLDAQ headers:
-
 #include <URL.h>
-#include <Exception.h>
+#include <CDataSourceFactory.h>
+#include <CDataSource.h>
+#include <CFileDataSource.h>
+#include <CRingDataSource.h>
 
 // Project headers:
-
-#include "DataSource.h"
-#include "FdDataSource.h"
-#include "StreamDataSource.h"
-#include "MapVersion.h"
 
 #include <FribEjfatUtils.h>
 
 namespace po = boost::program_options;
 using namespace e2sar;
-using namespace ufmt;
 using namespace frib_ejfat;
 
 // Prepare a pool. To avoid locking the pool we use the return queue.
@@ -158,7 +149,7 @@ getOpts(int ac, char* av[])
 	 "IP address (IPv4 or IPv6) from which sender sends from")
 	("source,s",
 	 po::value<std::string>()->required(),
-	 "Input data URI")
+	 "Input data URI (file or stream only)")
 	("nscldaq-version,v",
 	 po::value<int>()->default_value(12),
 	 "NSCLDAQ data format major version number")
@@ -191,7 +182,7 @@ freeBuffer(boost::any a)
 }
 
 /**
- * @brief Add data to the send queue and send it.
+ * @breif Add data to the send queue and send it.
  * @param s References our Segmenter instance.
  * @param pSource Pointer to data source where we get ring items.
  * @param nEvents Number of events to send.
@@ -202,7 +193,7 @@ freeBuffer(boost::any a)
  * @return EXIT_SUCCESS if successful, E2SAR error otherwise
  */
 result<int>
-sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
+sendEvents(Segmenter &s, CDataSource* pSource, size_t nEvents,
 	   size_t evtBufSize, float rateGbps=1.0, bool debug=false)
 {
     // Convert bit rate to event rate. Sleep at least 1 us between sends:
@@ -224,7 +215,7 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	      << " microseconds" << std::endl;
     std::cout << "Sending " << nEvents << " event buffers" << std::endl;
     std::cout << "Using MTU " << s.getMTU() << std::endl;
-
+    
     // Start threads, open sockets. Start sending sync packets:
     
     auto rv = s.openAndStart();    
@@ -239,22 +230,22 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
     // Create our buffer pool:
 	
     evtBufPool = new boost::pool<>{evtBufSize};
-    
+
     // Sleep to allow small number of frames to leave:
     
     boost::chrono::seconds duration(1);
     boost::this_thread::sleep_for(duration);
-
+    
     /////////////////////////////////////////////////////////////////////////
     // Send loop
     //
 
     u_int8_t* evtBuf{nullptr}; // Buffer from pool - fill and send.
     
+    auto now = boost::chrono::high_resolution_clock::now();
+    
     if (debug) {
-	std::cout << "Starting send loop at: "
-		  << boost::chrono::high_resolution_clock::now()
-		  << std::endl;
+	std::cout << "Starting send loop at: " << now << std::endl;
     }
 
     // Data we set for each event:
@@ -265,7 +256,7 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
     
     while (1) {
 	
-	auto now = boost::chrono::high_resolution_clock::now();
+	now = boost::chrono::high_resolution_clock::now();
 	
 	if (!evtBufQueue.pop(evtBuf)) {
 	    evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
@@ -277,18 +268,29 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	    break;
 	}
 	
+	/////////////////////////////////////////////////////////////////////
 	// Extract information from the event, copy it into the event buffer,
-	// and add it to the send queue. Event number is timestamp, data Id
-	// is the source Id. In the case no body header is present, the
-	// event timestamp is UINT64_MAX and the data Id is 0.
-
-	uint32_t   evtBufSize = pItem->size();
-	
-	if (pItem->hasBodyHeader()) {
-	    evtNumber = pItem->getEventTimestamp();
-	    dataId = pItem->getSourceId();
-	}
-	
+	// and add it to the send queue. The ring item body of a physics event 
+	// has the following contents:
+	//
+	// +-------------------------------------------------------+
+	// | uint32_t - Size of the body in 16 bit words           |
+	// +-------------------------------------------------------+
+	// | uint32_t - Module ID (bit 21 set: use external clock) |
+	// +-------------------------------------------------------+
+	// | double   - Clock scale factor                         |
+	// +-------------------------------------------------------+
+	// | Soup of hits as they come from the module             |
+	// | ...                                                   |
+	// +-------------------------------------------------------+
+	// 
+	// Note that there is no body header for raw data, so we set the
+	// event number manually rather than using the event's timestamp
+	// value. We cannot use the Segmenter's internal counter because
+	// we need to supply a callback function to manage our buffer pool.
+	///
+	    
+	uint32_t evtBufSize = pItem->size(); // Bytes.
 	memcpy(evtBuf, pItem->getItemPointer(), evtBufSize);
 	
 	if (debug) {
@@ -297,7 +299,7 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	    std::cout << "\tdataId:     " << dataId << std::endl;
 	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
 	    std::cout << "\titem type:  " << pItem->type() << std::endl;
-	    std::cout << pItem->toString() << std::endl;
+	    //std::cout << pItem->toString() << std::endl;
 	}
 	    
 	rv = s.addToSendQueue(evtBuf, evtBufSize, evtNumber, dataId,
@@ -333,16 +335,16 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	}
 
 	// Wait to send next event:
-    
-	boost::this_thread::sleep_until(until);
 	
+	boost::this_thread::sleep_until(until);
+		
     } // End of send loop
 
     // Done sending events, report:
    
-    auto stats = s.getSendStats();
-
-    std::cout << "Completed, " << stats.get<0>() << " frames sent, "
+    auto stats = s.getSendStats();    
+    std::cout << "Completed, " << evtNumber << " events, "
+	      << stats.get<0>() << " frames sent, "
 	      << stats.get<1>() << " errors" << std::endl;
     if (stats.get<1>() != 0)
     {
@@ -353,52 +355,6 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
     evtBufPool->purge_memory();
     
     return EXIT_SUCCESS;
-}
-
-/**
- * @brief Parse the URI of the source and based on the parse create the 
- * underlying connection. Create the correct concrete instance of DataSource 
- * given all that.
- * @param pFactory Pointer to the ring item factory to use.
- * @param strUrl   String URI of the connection.
- * @throw std::invalid_argument If a ringbuffer data source is requested.
- *   The unified format library is incorporated into NSCLDAQ, but does
- *   not have NSCLDAQ support enabled as it is installed first.
- * @return Dynamically allocated data source.
- * @note (ASC 11/19/24): Ringbuffer data sources are not currently supported.
- *   If needed, create a pipe to read from stdin.
- */
-DataSource*
-makeDataSource(RingItemFactoryBase* pFactory, const std::string& strUrl)
-{
-    // Special case the url is just "-" then it's stdin, a file descriptor
-    // data source:
-    
-    if (strUrl == "-") {
-        return new FdDataSource(pFactory, STDIN_FILENO);   
-    }
-        
-    URL uri(strUrl);
-    std::string protocol = uri.getProto();
-    
-    if (protocol == "tcp" || protocol == "ring") {
-	std::string msg(
-	    "Ringbuffer support is not enabled for this version of "
-	    "E2SAR send. To read data directly from a ringbuffer, "
-	    "create a pipe to read from stdin: ringselector | send_simdata -"
-	    );
-	throw std::invalid_argument(msg);
-    } else {
-        std::string path = uri.getPath();
-	// Need it to last past block:
-        std::ifstream& in(*(new std::ifstream(path.c_str())));
-	if (!in.good()) {
-	    std::string msg("Failed to create input stream from ");
-	    msg += path;
-	    throw std::invalid_argument(msg);	    
-	}
-        return new StreamDataSource(pFactory, in);
-    }
 }
 
 /**
@@ -419,14 +375,13 @@ main(int argc, char* argv[])
 	/////////////////////////////////////////////////////////////////////
 	// Configure data source
 	///
-
-	int daqVersion = opts["nscldaq-version"].as<int>();
-	FormatSelector::SupportedVersions version = mapVersion(daqVersion);
-	auto& factory = FormatSelector::selectFactory(version);
-
-	auto srcName = opts["source"].as<std::string>();
-	std::unique_ptr<DataSource> pSource(makeDataSource(&factory, srcName));
 	
+	auto srcUri = opts["source"].as<std::string>();
+	std::vector<uint16_t> sample, exclude; // Required but unused.
+	CDataSourceFactory factory;
+	std::unique_ptr<CDataSource> pSource(
+	    factory.makeSource(srcUri, sample, exclude)
+	    );	
 
 	/////////////////////////////////////////////////////////////////////
 	// Configure E2SAR
@@ -468,7 +423,7 @@ main(int argc, char* argv[])
 	/////////////////////////////////////////////////////////////////////
 	// Instantiate and run Segmenter:
 	///
-
+	
 	// Configure control plane (if used):
 
 	if (flags.useCP) {	    
@@ -495,7 +450,7 @@ main(int argc, char* argv[])
 		shutdown();
 		std::exit(EXIT_FAILURE);
 	    }
-
+	    
 	    auto token = EjfatURI::TokenType::session;
 	    auto lbmUri_s = lbmPtr->get_URI().to_string(token);
 	    auto addrStr = lbmPtr->get_AddrString();
@@ -516,24 +471,25 @@ main(int argc, char* argv[])
 		      << rv.error().message() << std::endl;
 	    exit(EXIT_FAILURE);
 	}
+
     }
-    catch (E2SARException &e) {
-	auto msg = static_cast<std::string>(e);
-	std::cerr << "E2SAR exception: " << msg << std::endl;
+    catch (const E2SARException& e) {
+	std::cerr << "E2SAR exception: "
+		  << static_cast<std::string>(e) << std::endl;
 	shutdown();
 	exit(EXIT_FAILURE);
     }
     catch (std::string& e) {
-	std::cerr <<  "std::string exception: " << e << std::endl;
+	std::cerr << "std::string exception: " << e << std::endl;
 	shutdown();
 	exit(EXIT_FAILURE);
     }
     catch (...) {
 	std::cerr << "Caught unexpected exception type, exiting" << std::endl;
 	shutdown();
-	return EXIT_FAILURE;
+	exit(EXIT_FAILURE);
     }
-    
+
     shutdown();
     
     return EXIT_SUCCESS;

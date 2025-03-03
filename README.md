@@ -23,8 +23,10 @@ cmake --build .
 cmake --install .
 ```
 
+DO NOT use the cmake command-line `--isntall` mode! This will override the CMAKE_INSTALL_PREFIX which _must_ be set when the build files are written as it is used to set the runtime path for internally-linked libraries!
+
 - You can override the default unified format path by setting an alternative during the first stage of the build with `-DUFMT_ROOT=/path/to/ufmt`.
-- 
+- Parallel builds are supported by the `-j` flag, where `-jN` will use `N` cores to build. Note that due to some internal dependencies the build _may_ fail if `N` is "large."
 
 ## Running the examples
 

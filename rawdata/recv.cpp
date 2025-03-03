@@ -16,13 +16,15 @@
 
 /** 
  * @file recv.cpp
- * @brief Simple receive of NSCLDAQ data with or without load balancer.
+ * @brief Receiver for raw data in evb pipeline.
  */
 
 #include <iostream>
 #include <cstddef>
 #include <string>
 #include <csignal>
+#include <stdexcept>
+#include <sstream>
 
 #include <boost/program_options.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
@@ -30,30 +32,24 @@
 #include <e2sar.hpp>
 #include <e2sarDPReassembler.hpp>
 
-// Unified format library:
+// NSCLDAQ headers:
 
 #include <DataFormat.h>
-#include <RingItemFactoryBase.h>
 #include <CRingItem.h>
-
-// Other NSCLDAQ headers:
-
-#include <Exception.h>
 #include <URL.h>
+#include <Exception.h>
+#include <CDataSinkFactory.h>
+#include <CDataSink.h>
+#include <CFileDataSink.h>
+#include <CRingDataSink.h>
 
 // Project headers:
-
-#include "DataSink.h"
-#include "FileDataSink.h"
-#include "RingDataSink.h"
-#include "MapVersion.h"
 
 #include <FribEjfatUtils.h>
 
 namespace po = boost::program_options;
 namespace pt = boost::posix_time;
 using namespace e2sar;
-using namespace ufmt;
 using namespace frib_ejfat;
 
 // Other global config:
@@ -126,7 +122,10 @@ getOpts(int ac, char* av[])
 	 "starting UDP port number on which receiver listens.")
 	("sink,S",
 	 po::value<std::string>()->required(),
-	 "URI of data sink (ringbuffer or file)")
+	 "path to output file data sink (*not* a URI)")
+	("sink-format,f",
+	 po::value<std::string>()->default_value("ring"),
+	 "sink format (ringbuffer or file)")
 	("threads,t",
 	 po::value<size_t>()->default_value(1),
 	 "number of reassembler threads")
@@ -206,9 +205,8 @@ prepareToReceive(Reassembler* r)
 /**
  * @brief Receive and reassemble events.
  * @param r Pointer to our Reassembler instance.
- * @param pSink Pointer to the (for now always a file) data sink we write to.
+ * @param pSink Pointer to the data sink we write to.
  * @param factory Factory for creating formatted ring items.
- * @param version NSCLDAQ format version (for parsing v11 vs. v12 headers).
  * @param durationSec Listening duration; if 0, listen forever.
  * @param debug Enable debugging output.
  * @return EXIT_SUCCESS if successful, E2SAR error otherwise.
@@ -220,9 +218,8 @@ prepareToReceive(Reassembler* r)
  *   unpacking method based on the DAQ version provided by the user.
  */
 result<int>
-recvEvents(Reassembler* r,  DataSink* pSink, RingItemFactoryBase& factory,
-	   FormatSelector::SupportedVersions version, int durationSec,
-	   bool debug=false)
+recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
+	   CDataSink* pSink, int durationSec, bool debug=false)
 {    
     // Received event information and receiver config. We recycle the buffer
     // with blocking calls to receive data. The extent of good data for a
@@ -247,6 +244,7 @@ recvEvents(Reassembler* r,  DataSink* pSink, RingItemFactoryBase& factory,
 	// auto rv = r->recvEvent(&evtBuf, &evtBufSize, &evtNum,
 	// 		       &dataId, waitMs);
 	auto rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
+	
         auto next = boost::chrono::steady_clock::now();
 
 	// If duration is set stop listening after that time and exit.
@@ -272,28 +270,20 @@ recvEvents(Reassembler* r,  DataSink* pSink, RingItemFactoryBase& factory,
 	// on the remaining size after the header sizes are subtracted and
 	// then do byte-by-byte copy of the buffer into the ring item body.
 	///
-
+	
 	u_int8_t* p = evtBuf;         // Pointer to first byte of evtBuf.
 	size_t bodySize = evtBufSize; // In bytes.
 	
 	auto pHdr = reinterpret_cast<RingItemHeader*>(p);
 	p += sizeof(RingItemHeader);
 	bodySize -= sizeof(RingItemHeader);
-
-	// Body headers exist starting with NSCLDAQ 11. Note that this section
-	// of code breaks compatibility with v10:
 	
 	auto pBodyHdr = reinterpret_cast<BodyHeader*>(p);
 	size_t bodyHdrSize = pBodyHdr->s_size;
-	// v11 body header size is not self-inclusive if not present:	
-	if (bodyHdrSize == 0 && version == FormatSelector::v11) {
-	    bodyHdrSize = sizeof(uint32_t); // Inclusive size
-	}
 	p += bodyHdrSize;
 	bodySize -= bodyHdrSize; // Whatever is left is the payload.
-
 	std::unique_ptr<CRingItem> pItem(
-	    factory.makeRingItem(pHdr->s_type, bodySize)
+	    new CRingItem(pHdr->s_type, bodySize)
 	    );
 	if (bodyHdrSize > sizeof(uint32_t)) {
 	    pItem->setBodyHeader(pBodyHdr->s_timestamp,
@@ -302,17 +292,19 @@ recvEvents(Reassembler* r,  DataSink* pSink, RingItemFactoryBase& factory,
 	}	
 	u_int8_t* pBody = reinterpret_cast<u_int8_t*>(pItem->getBodyCursor());
 	memcpy(pBody, p, bodySize);
-	pBody += bodySize;	    
+	pBody += bodySize;	
 	pItem->setBodyCursor(pBody);
 	pItem->updateSize();
 		
 	if (debug) {
-	    std::cout << "Receive event:" << std::endl;
-	    std::cout << "\tevtNumber:  " << evtNum << std::endl;
-	    std::cout << "\tdataId:     " << dataId << std::endl;
-	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
-	    std::cout << "\titem type:  " << pItem->type() << std::endl;
-	    std::cout << pItem->toString() << std::endl;
+	    std::cout << "Receive event: " << std::endl;
+	    std::cout << "\tevtNumber:   " << evtNum << std::endl;
+	    std::cout << "\tdataId:      " << dataId << std::endl;
+	    std::cout << "\tevtBufSize:  " << evtBufSize << std::endl;
+	    std::cout << "\titem type:   " << pItem->type() << std::endl;
+	    std::cout << "\tbodySize:    " << bodySize << std::endl;
+	    std::cout << "\tbodyHdrSize: " << bodyHdrSize << std::endl;
+	    //std::cout << pItem->toString() << std::endl;
 	}
 
 	pSink->putItem(*pItem.get());
@@ -329,7 +321,7 @@ recvEvents(Reassembler* r,  DataSink* pSink, RingItemFactoryBase& factory,
  * @param r Pointer to Reassembler.
  */
 void
-recvStatsThread(Reassembler* r)
+recvStatsThread(Reassembler *r)
 {
     std::vector<std::pair<EventNum_t, u_int16_t>> lostEvents;
 
@@ -375,32 +367,6 @@ recvStatsThread(Reassembler* r)
 }
 
 /**
- * @brief Create and return dynamically created sink based on the URI proto.
- * @param strUrl References the URI string for the sink (ringbuffer or file).
- * @throw std::runtime_error If the URI protocol is not known.
- * @return Pointer to the dynamically created sink.
- * @todo (ASC 3/3/25): Exception if ringbuffer is not localhost.
- * @todo (ASC 3/3/25): Catch and handle all the ways constructors can fail,
- *   make sure this exception is handled in main.
- */
-DataSink*
-makeDataSink(const std::string& strUrl)
-{
-    URL url(strUrl);
-    std::string protocol = url.getProto();
-    std::string path = url.getPath();
-    if (protocol == "tcp" || protocol == "ring") {
-	return new RingDataSink(path);
-    } else if (protocol == "file") {
-	return new FileDataSink(path);
-    } else {
-	std::string msg("unknown proto for sink ");
-	msg += protocol;
-	throw std::runtime_error(msg);
-    }
-}
-
-/**
  * @brief Receive main. Create a data sink and Reassembler; listen for data and
  * write it to the sink.
  */
@@ -416,13 +382,10 @@ main(int argc, char* argv[])
 	// Configure data sink
 	///
 	
-	auto daqVersion = opts["nscldaq-version"].as<int>();
-	auto version = mapVersion(daqVersion);
-	auto& factory = FormatSelector::selectFactory(version);
-
 	auto sinkUri = opts["sink"].as<std::string>();
-	std::unique_ptr<DataSink> pSink(makeDataSink(sinkUri));
-	
+	CDataSinkFactory factory;
+	std::unique_ptr<CDataSink> pSink(factory.makeSink(sinkUri));
+		
 	/////////////////////////////////////////////////////////////////////
 	// Configure E2SAR
 	///
@@ -432,10 +395,10 @@ main(int argc, char* argv[])
 	auto preferV6 = opts["preferV6"].as<bool>();
 	auto ip_s = opts["ip"].as<std::string>();
 	auto port = opts["port"].as<u_int16_t>();
-	auto durationSec = opts["duration"].as<int>();
-	auto numThreads = opts["threads"].as<size_t>(); // Reassembler
-	auto deqThreads = opts["deq"].as<size_t>();     // Dequeue/read
-	auto configFile(opts["config-file"].as<std::string>());
+	int durationSec = opts["duration"].as<int>();
+	size_t numThreads = opts["threads"].as<size_t>(); // Reassembler
+	size_t deqThreads = opts["deq"].as<size_t>();     // Dequeue/read
+	std::string configFile(opts["config-file"].as<std::string>());
 	bool debug = opts.count("debug");
 
 	std::string ejfatUri_s("");
@@ -472,16 +435,15 @@ main(int argc, char* argv[])
 	std::vector<boost::thread> threads;
 	for(size_t i = 0; i < deqThreads; i++)
 	{
-	    boost::thread syncT(recvEvents, reasPtr, pSink.get(),
-				std::ref(factory), version, durationSec,
-				debug);
+	    boost::thread syncT(recvEvents, reasPtr, flags, pSink.get(),
+				durationSec, debug);
 	    threads.push_back(std::move(syncT)); // Transfer, dont copy!
 	}
 
 	for (auto& t : threads) { // Must be a reference.
 	    t.join();
 	}
-	
+		       
     }
     catch (E2SARException &e) {
 	auto msg = static_cast<std::string>(e);
@@ -499,8 +461,8 @@ main(int argc, char* argv[])
 	shutdown();
 	return EXIT_FAILURE;
     }
-
-    shutdown();  // Shutdown for finite duration run.
+    
+    shutdown(); // Shutdown for finite duration run.
     
     return EXIT_SUCCESS;
 }

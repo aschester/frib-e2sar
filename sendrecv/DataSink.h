@@ -14,11 +14,11 @@
              East Lansing, MI 48824-1321
 */
 
-#ifndef CDATASINK_H
-#define CDATASINK_H
+#ifndef DATASINK_H
+#define DATASINK_H
 
 /**
- * @file CDataSink.h
+ * @file DataSink.h
  * @brief Abstract base class for data sinks.
  */
 
@@ -29,17 +29,17 @@ namespace ufmt {
 }
 
 /** 
- * @brief Interface for CDataSinks
+ * @brief Interface for DataSinks
  * @details
  * This is a pure virtual base class that establishes an
  * expected interface for all data sinks.
  */
 
-class CDataSink
+class DataSink
 {    
 public:    
     /** The virtual destructor */
-    virtual ~CDataSink();
+    virtual ~DataSink();
 
     /**
      * @brief A method defining how to send ring items to the sink
