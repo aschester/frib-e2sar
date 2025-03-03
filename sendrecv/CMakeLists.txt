@@ -1,5 +1,5 @@
 project(SendRecv VERSION 0.1
-  DESCRIPTION "Use E2SAR to transmit NSLCDAQ data"
+  DESCRIPTION "Transmit Unified Format Library event data"
   LANGUAGES CXX
   )
 
@@ -24,7 +24,7 @@ set(common_libs
   )
 
 ##
-# Shared ufmt I/O library:
+# ufmt I/O library:
 #
 
 set(io_src
@@ -35,11 +35,15 @@ set(io_headers
   DataSource.h FdDataSource.h StreamDataSource.h
   DataSink.h FileDataSink.h RingDataSink.h
   )
+
+# Shared, installed:
+
 set(io_lib EjfatIO)
 add_library(${io_lib} SHARED ${io_src})
-
 target_include_directories(${io_lib} PUBLIC ${common_includes})
 target_link_libraries(${io_lib} ${common_libs})
+
+# Internally link against this one:
 
 set(io_ar EjfatIO_ar)
 add_library(${io_ar} STATIC ${io_src})
@@ -47,7 +51,10 @@ target_include_directories(${io_ar} PUBLIC ${common_includes})
 target_link_libraries(${io_ar} ${common_libs})
 
 ##
-# Executables:
+# Build and install:
+# - Project headers
+# - I/O library
+# - Executables
 #
 
 set(send_exec send_sendrecv)
@@ -63,10 +70,6 @@ add_executable(${recv_exec} ${recv_src})
 target_include_directories(${recv_exec} PRIVATE ${common_includes})
 target_link_libraries(${recv_exec} ${common_libs} FribEjfatUtils EjfatIO_ar)
 set_target_properties(${recv_exec} PROPERTIES OUTPUT_NAME recv)
-
-##
-# Install:
-#
 
 install(FILES ${io_headers} DESTINATION include)
 install(TARGETS ${io_lib} DESTINATION lib)

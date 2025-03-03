@@ -16,7 +16,7 @@
 
 /** 
  * @file send.cpp
- * @brief Send raw NSCLDAQ data through E2SAR.
+ * @brief Send raw NSCLDAQ data through E2SAR for event building.
  */
 
 /** 
@@ -150,9 +150,6 @@ getOpts(int ac, char* av[])
 	("source,s",
 	 po::value<std::string>()->required(),
 	 "Input data URI (file or stream only)")
-	("nscldaq-version,v",
-	 po::value<int>()->default_value(12),
-	 "NSCLDAQ data format major version number")
 	("debug", "enable debugging output")
 	;
     
@@ -242,10 +239,10 @@ sendEvents(Segmenter &s, CDataSource* pSource, size_t nEvents,
 
     u_int8_t* evtBuf{nullptr}; // Buffer from pool - fill and send.
     
-    auto now = boost::chrono::high_resolution_clock::now();
-    
     if (debug) {
-	std::cout << "Starting send loop at: " << now << std::endl;
+	std::cout << "Starting send loop at: "
+		  << boost::chrono::high_resolution_clock::now()
+		  << std::endl;
     }
 
     // Data we set for each event:
@@ -256,7 +253,7 @@ sendEvents(Segmenter &s, CDataSource* pSource, size_t nEvents,
     
     while (1) {
 	
-	now = boost::chrono::high_resolution_clock::now();
+	auto now = boost::chrono::high_resolution_clock::now();
 	
 	if (!evtBufQueue.pop(evtBuf)) {
 	    evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
@@ -270,8 +267,8 @@ sendEvents(Segmenter &s, CDataSource* pSource, size_t nEvents,
 	
 	/////////////////////////////////////////////////////////////////////
 	// Extract information from the event, copy it into the event buffer,
-	// and add it to the send queue. The ring item body of a physics event 
-	// has the following contents:
+	// and add it to the send queue. The ring item body of a v12 physics
+	// event has the following contents:
 	//
 	// +-------------------------------------------------------+
 	// | uint32_t - Size of the body in 16 bit words           |
@@ -281,7 +278,7 @@ sendEvents(Segmenter &s, CDataSource* pSource, size_t nEvents,
 	// | double   - Clock scale factor                         |
 	// +-------------------------------------------------------+
 	// | Soup of hits as they come from the module             |
-	// | ...                                                   |
+	// | ... (Pixie headers ) ...                              |
 	// +-------------------------------------------------------+
 	// 
 	// Note that there is no body header for raw data, so we set the

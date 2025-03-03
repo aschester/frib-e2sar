@@ -16,7 +16,7 @@
 
 /** 
  * @file recv.cpp
- * @brief Receiver for raw data in evb pipeline.
+ * @brief Receiver for raw data in event building pipeline.
  */
 
 #include <iostream>
@@ -122,7 +122,7 @@ getOpts(int ac, char* av[])
 	 "starting UDP port number on which receiver listens.")
 	("sink,S",
 	 po::value<std::string>()->required(),
-	 "path to output file data sink (*not* a URI)")
+	 "URI of data sink")
 	("sink-format,f",
 	 po::value<std::string>()->default_value("ring"),
 	 "sink format (ringbuffer or file)")
@@ -138,9 +138,6 @@ getOpts(int ac, char* av[])
 	("preferV6",
 	 po::value<bool>()->default_value(false),
 	 "prefer IPv6 over IPv4")
-	("nscldaq-version,v",
-	 po::value<int>()->default_value(12),
-	 "NSCLDAQ data format major version number")
 	("debug", "enable debugging output")
 	;
     po::variables_map vm; // Command line options stored here.
@@ -206,7 +203,6 @@ prepareToReceive(Reassembler* r)
  * @brief Receive and reassemble events.
  * @param r Pointer to our Reassembler instance.
  * @param pSink Pointer to the data sink we write to.
- * @param factory Factory for creating formatted ring items.
  * @param durationSec Listening duration; if 0, listen forever.
  * @param debug Enable debugging output.
  * @return EXIT_SUCCESS if successful, E2SAR error otherwise.
@@ -218,8 +214,7 @@ prepareToReceive(Reassembler* r)
  *   unpacking method based on the DAQ version provided by the user.
  */
 result<int>
-recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
-	   CDataSink* pSink, int durationSec, bool debug=false)
+recvEvents(Reassembler* r, CDataSink* pSink, int durationSec, bool debug=false)
 {    
     // Received event information and receiver config. We recycle the buffer
     // with blocking calls to receive data. The extent of good data for a
@@ -231,7 +226,7 @@ recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
     u_int16_t  dataId;          // Data Id (source Id or other)
     u_int64_t  waitMs = 1000;   // Wait time in milliseconds
     
-    auto now = boost::chrono::steady_clock::now();
+    auto start = boost::chrono::steady_clock::now();
 
     /////////////////////////////////////////////////////////////////////////
     // Receive loop
@@ -245,14 +240,14 @@ recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
 	// 		       &dataId, waitMs);
 	auto rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
 	
-        auto next = boost::chrono::steady_clock::now();
+        auto now = boost::chrono::steady_clock::now();
 
 	// If duration is set stop listening after that time and exit.
 	// Note that we handle shutdown in main after the read thread(s)
 	// have exited.
 	
         if ((durationSec != 0)
-	    && ((next - now) > boost::chrono::seconds(durationSec)))
+	    && ((now - start) > boost::chrono::seconds(durationSec)))
             break;
 	
         if (rv.has_error())
@@ -435,8 +430,8 @@ main(int argc, char* argv[])
 	std::vector<boost::thread> threads;
 	for(size_t i = 0; i < deqThreads; i++)
 	{
-	    boost::thread syncT(recvEvents, reasPtr, flags, pSink.get(),
-				durationSec, debug);
+	    boost::thread syncT(recvEvents, reasPtr, pSink.get(), durationSec,
+				debug);
 	    threads.push_back(std::move(syncT)); // Transfer, dont copy!
 	}
 

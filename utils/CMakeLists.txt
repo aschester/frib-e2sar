@@ -1,5 +1,5 @@
 project(FribEjfatUtils VERSION 0.1
-  DESCRIPTION "Utilities for FRIB-E2SAR development"
+  DESCRIPTION "Utilities for FRIB-E2SAR processing"
   LANGUAGES CXX
   )
 

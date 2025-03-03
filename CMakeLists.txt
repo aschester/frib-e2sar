@@ -8,6 +8,10 @@ project(FRIB_E2SAR VERSION 0.1
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+##
+# Required for E2SAR projects:
+#
+
 find_package(Boost COMPONENTS system url thread chrono random program_options
   REQUIRED
   )
@@ -26,6 +30,10 @@ set(PROJECT_LIBS
   Threads::Threads
   )
 
+##
+# Our env:
+#
+
 set(NSCLDAQ_ROOT "_"  CACHE STRING "Path to NSCLDAQ installation")
 set(NSCLDAQ_INC "${NSCLDAQ_ROOT}/include" CACHE STRING "NSCLDAQ include dir")
 set(NSCLDAQ_LIB "${NSCLDAQ_ROOT}/lib" CACHE STRING "NSCLDAQ lib dir")
@@ -34,7 +42,9 @@ message(STATUS "Using NSLCDAQ: ${NSCLDAQ_ROOT}")
 # Use ufmt from NSCLDAQ installation directory. This ufmt does not have
 # ringbuffer support.
 
-set(UFMT_ROOT "${NSCLDAQ_ROOT}/unifiedformat" CACHE STRING "Path to unified format library installation")
+set(UFMT_ROOT "${NSCLDAQ_ROOT}/unifiedformat"
+  CACHE STRING "Path to unified format library installation"
+  )
 set(UFMT_INC "${UFMT_ROOT}/include" CACHE STRING "Unified format include dir")
 set(UFMT_LIB "${UFMT_ROOT}/lib" CACHE STRING "Unified format lib dir")
 set(UFMT_LDLIBS
@@ -47,13 +57,18 @@ set(UFMT_LDLIBS
   )
 message(STATUS "Using NSCLDAQ unified format: ${UFMT_ROOT}")
 
-add_compile_options(-g -O2 #-Wall
+##
+# Build and install:
+#
+
+# -Wall sow a lot of warnings from e.g. NSCLDAQ which we suppress.
+add_compile_options(-g -O2 # -Wall
   )
 
 add_subdirectory(utils)
 add_subdirectory(checkdefaults)
 add_subdirectory(sendrecv)
-#add_subdirectory(rawdata)
+add_subdirectory(evtbuild)
 
 set(ini_files reassembler_config.ini segmenter_config.ini)
 install(FILES ${ini_files} DESTINATION ini)
