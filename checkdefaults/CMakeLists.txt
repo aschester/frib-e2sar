@@ -1,5 +1,5 @@
 project(CheckDefaults VERSION 0.1
-  DESCRIPTION "E2SAR check defaults"
+  DESCRIPTION "Check default E2SAR settings"
   LANGUAGES CXX
   )
 
