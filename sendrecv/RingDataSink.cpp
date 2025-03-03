@@ -14,7 +14,7 @@
 	     East Lansing, MI 48824-1321
 */
 
-#include "CRingDataSink.h"
+#include "RingDataSink.h"
 
 #include <stdexcept>
 
@@ -23,14 +23,14 @@
 
 using namespace ufmt;
 
-CRingDataSink::CRingDataSink(std::string ringName)
+RingDataSink::RingDataSink(std::string ringName)
   : m_pRing(0),
     m_ringName(ringName)
 {
   openRing();
 }
 
-CRingDataSink::~CRingDataSink()
+RingDataSink::~RingDataSink()
 {
   delete m_pRing;
   m_pRing=0;
@@ -41,7 +41,7 @@ CRingDataSink::~CRingDataSink()
  *    Puts a ring item in the sink.
  * @param item - Reference to the item top ut.
  */
-void CRingDataSink::putItem(const CRingItem& item)
+void RingDataSink::putItem(const CRingItem& item)
 {
   put(item.getItemPointer(), item.size());
 
@@ -53,7 +53,7 @@ void CRingDataSink::putItem(const CRingItem& item)
  *   @param pData - Pointer to the buffer holding the data.
  *   @param nBytes - Number of bytes to put.
  */
-void CRingDataSink::put(const void* pData, size_t nBytes)
+void RingDataSink::put(const void* pData, size_t nBytes)
 {
     
     // TODO:  This is the theoretical correct way to do this as
@@ -66,7 +66,7 @@ void CRingDataSink::put(const void* pData, size_t nBytes)
 }
 
 
-void CRingDataSink::openRing()
+void RingDataSink::openRing()
 {
   // try to open the ring as a producer...
   // check if the ring exists... if it does just
@@ -81,7 +81,7 @@ void CRingDataSink::openRing()
   }
   if (m_pRing==0) {
       // todo (ASC 2/27/25): Port over exception class from NSCLDAQ/io.
-      std::string msg("CRingDataSink::openRing() failed to create ringbuffer");
+      std::string msg("RingDataSink::openRing() failed to create ringbuffer");
       throw std::runtime_error(msg);
   }
 }

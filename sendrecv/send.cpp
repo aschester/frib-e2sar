@@ -24,6 +24,8 @@
  * admin token.
  */
 
+#include <unistd.h>
+
 #include <iostream>
 #include <cstddef>
 #include <string>
@@ -62,7 +64,9 @@
 #include "DataSource.h"
 #include "FdDataSource.h"
 #include "StreamDataSource.h"
-#include "FribEjfatUtils.h"
+#include "MapVersion.h"
+
+#include <FribEjfatUtils.h>
 
 namespace po = boost::program_options;
 using namespace e2sar;
@@ -154,7 +158,7 @@ getOpts(int ac, char* av[])
 	 "IP address (IPv4 or IPv6) from which sender sends from")
 	("source,s",
 	 po::value<std::string>()->required(),
-	 "Input data URI (file or stream only)")
+	 "Input data URI")
 	("nscldaq-version,v",
 	 po::value<int>()->default_value(12),
 	 "NSCLDAQ data format major version number")
@@ -187,53 +191,7 @@ freeBuffer(boost::any a)
 }
 
 /**
- * @brief Parse the URI of the source and based on the parse create the 
- * underlying connection. Create the correct concrete instance of DataSource 
- * given all that.
- * @param pFactory Pointer to the ring item factory to use.
- * @param strUrl   String URI of the connection.
- * @throw std::invalid_argument If a ringbuffer data source is requested.
- *   The unified format library is incorporated into the NSCLDAQ, but does
- *   not have NSCLDAQ support enabled as its installed first.
- * @return Dynamically allocated data source.
- * @note (ASC 11/19/24): Ringbuffer data sources not currently supported.
- *   If needed, create a pipe to read from stdin.
- */
-DataSource*
-makeDataSource(RingItemFactoryBase* pFactory, const std::string& strUrl)
-{
-    // Special case the url is just "-" then it's stdin, a file descriptor
-    // data source:
-    
-    if (strUrl == "-") {
-        return new FdDataSource(pFactory, STDIN_FILENO);   
-    }
-        
-    URL uri(strUrl);
-    std::string protocol = uri.getProto();
-    
-    if ((protocol == "tcp") || (protocol == "ring")) {
-	std::string msg(
-	    "Ringbuffer support is not enabled for this version of "
-	    "E2SAR send. To read data directly from a ringbuffer, "
-	    "create a pipe to read from stdin: ringselector | send_simdata -"
-	    );
-	throw std::invalid_argument(msg);
-    } else {
-        std::string path = uri.getPath();
-	// Need it to last past block:
-        std::ifstream& in(*(new std::ifstream(path.c_str())));
-	if (!in.good()) {
-	    std::string msg("Failed to create input stream from ");
-	    msg += path;
-	    throw std::invalid_argument(msg);	    
-	}
-        return new StreamDataSource(pFactory, in);
-    }
-}
-
-/**
- * @breif Add data to the send queue and send it.
+ * @brief Add data to the send queue and send it.
  * @param s References our Segmenter instance.
  * @param pSource Pointer to data source where we get ring items.
  * @param nEvents Number of events to send.
@@ -244,7 +202,7 @@ makeDataSource(RingItemFactoryBase* pFactory, const std::string& strUrl)
  * @return EXIT_SUCCESS if successful, E2SAR error otherwise
  */
 result<int>
-sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
+sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	   size_t evtBufSize, float rateGbps=1.0, bool debug=false)
 {
     // Convert bit rate to event rate. Sleep at least 1 us between sends:
@@ -278,6 +236,10 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 	std::cout << "Segmenter started OK\n";
     }	
 
+    // Create our buffer pool:
+	
+    evtBufPool = new boost::pool<>{evtBufSize};
+    
     // Sleep to allow small number of frames to leave:
     
     boost::chrono::seconds duration(1);
@@ -289,22 +251,27 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 
     u_int8_t* evtBuf{nullptr}; // Buffer from pool - fill and send.
     
-    auto now = boost::chrono::high_resolution_clock::now();
-    
     if (debug) {
-	std::cout << "Starting send loop at: " << now << std::endl;
+	std::cout << "Starting send loop at: "
+		  << boost::chrono::high_resolution_clock::now()
+		  << std::endl;
     }
-   
-    int remaining = nEvents;
+
+    // Data we set for each event:
+    
+    EventNum_t evtNumber = 0; // Iterate on send.
+    u_int16_t  dataId    = 0; // Default.
+    u_int16_t  entropy   = 0; // Default.
+    
     while (1) {
 	
-	now = boost::chrono::high_resolution_clock::now();
+	auto now = boost::chrono::high_resolution_clock::now();
 	
 	if (!evtBufQueue.pop(evtBuf)) {
 	    evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
 	}
 
-	std::unique_ptr<::ufmt::CRingItem> pItem(pSource->getItem());
+	std::unique_ptr<CRingItem> pItem(pSource->getItem());
 	
 	if (!pItem.get()) { // End of source.
 	    break;
@@ -315,10 +282,7 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 	// is the source Id. In the case no body header is present, the
 	// event timestamp is UINT64_MAX and the data Id is 0.
 
-	EventNum_t evtNumber  = UINT64_MAX;
-	u_int16_t  dataId     = 0;
 	uint32_t   evtBufSize = pItem->size();
-	u_int16_t  entropy    = 0;
 	
 	if (pItem->hasBodyHeader()) {
 	    evtNumber = pItem->getEventTimestamp();
@@ -343,13 +307,6 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 	    continue;
 	}
 	
-	if (nEvents != 0) {
-	    remaining--;
-	    if (remaining <= 0) {
-		break;
-	    }
-	}
-	
 	auto until = now + boost::chrono::microseconds(interEventSleepUsec);
 	if (now > until)
 	{
@@ -363,6 +320,16 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
 	u_int8_t* item{nullptr};
 	while (evtBufQueue.pop(item)) {
 	    evtBufPool->free(item);
+	}
+
+	// Done with this iteration:
+	
+	evtNumber++;
+
+	// Check if we've hit a limit:
+	
+	if (nEvents != 0 && evtNumber == nEvents) {
+	    break;
 	}
 
 	// Wait to send next event:
@@ -386,6 +353,52 @@ sendEvents(Segmenter &s, DataSource* pSource, size_t nEvents,
     evtBufPool->purge_memory();
     
     return EXIT_SUCCESS;
+}
+
+/**
+ * @brief Parse the URI of the source and based on the parse create the 
+ * underlying connection. Create the correct concrete instance of DataSource 
+ * given all that.
+ * @param pFactory Pointer to the ring item factory to use.
+ * @param strUrl   String URI of the connection.
+ * @throw std::invalid_argument If a ringbuffer data source is requested.
+ *   The unified format library is incorporated into NSCLDAQ, but does
+ *   not have NSCLDAQ support enabled as it is installed first.
+ * @return Dynamically allocated data source.
+ * @note (ASC 11/19/24): Ringbuffer data sources are not currently supported.
+ *   If needed, create a pipe to read from stdin.
+ */
+DataSource*
+makeDataSource(RingItemFactoryBase* pFactory, const std::string& strUrl)
+{
+    // Special case the url is just "-" then it's stdin, a file descriptor
+    // data source:
+    
+    if (strUrl == "-") {
+        return new FdDataSource(pFactory, STDIN_FILENO);   
+    }
+        
+    URL uri(strUrl);
+    std::string protocol = uri.getProto();
+    
+    if (protocol == "tcp" || protocol == "ring") {
+	std::string msg(
+	    "Ringbuffer support is not enabled for this version of "
+	    "E2SAR send. To read data directly from a ringbuffer, "
+	    "create a pipe to read from stdin: ringselector | send_simdata -"
+	    );
+	throw std::invalid_argument(msg);
+    } else {
+        std::string path = uri.getPath();
+	// Need it to last past block:
+        std::ifstream& in(*(new std::ifstream(path.c_str())));
+	if (!in.good()) {
+	    std::string msg("Failed to create input stream from ");
+	    msg += path;
+	    throw std::invalid_argument(msg);	    
+	}
+        return new StreamDataSource(pFactory, in);
+    }
 }
 
 /**
@@ -413,6 +426,7 @@ main(int argc, char* argv[])
 
 	auto srcName = opts["source"].as<std::string>();
 	std::unique_ptr<DataSource> pSource(makeDataSource(&factory, srcName));
+	
 
 	/////////////////////////////////////////////////////////////////////
 	// Configure E2SAR
@@ -430,9 +444,9 @@ main(int argc, char* argv[])
 
 	// Override defaults if provided:
 
-	std::string uri_s("");
+	std::string ejfatUri_s("");
 	if (opts.count("uri")) {
-	    uri_s = opts["uri"].as<std::string>();
+	    ejfatUri_s = opts["uri"].as<std::string>();
 	}
 	
 	size_t nEvents = 0;	
@@ -441,12 +455,12 @@ main(int argc, char* argv[])
 	}
 	
 	auto flags = getSegmenterFlagsFromINI(configFile);
-	auto uri = getURI(uri_s, tt, flags.dpV6);	    
+	auto ejfatUri = getURI(ejfatUri_s, tt, flags.dpV6);	    
     
 	if (debug) {
 	    std::cout << "Using E2SAR version: " << get_Version() << std::endl;
 	    printSegmenterFlags(flags);
-	    std::cout << "Using URI: " << uri.to_string() << std::endl;
+	    std::cout << "Using URI: " << ejfatUri.to_string() << std::endl;
 	    std::cout << "Sending " << nEvents << " events" << std::endl;
 	    std::cout << "Max buffer: " << evtBufSize << " bytes" << std::endl;
 	}	
@@ -454,10 +468,6 @@ main(int argc, char* argv[])
 	/////////////////////////////////////////////////////////////////////
 	// Instantiate and run Segmenter:
 	///
-
-	// Create our buffer pool:
-	
-	evtBufPool = new boost::pool<>{evtBufSize};
 
 	// Configure control plane (if used):
 
@@ -468,7 +478,7 @@ main(int argc, char* argv[])
 	    
 	    senders.push_back(sendIP);
 	    
-	    lbmPtr = new LBManager(uri);
+	    lbmPtr = new LBManager(ejfatUri);
 
 	    std::cout << "Adding senders to LB:\n";
 	    for (const auto& s: senders) {
@@ -485,41 +495,46 @@ main(int argc, char* argv[])
 		shutdown();
 		std::exit(EXIT_FAILURE);
 	    }
-	    
-	    auto uriStr	= lbmPtr->get_URI().to_string(
-		EjfatURI::TokenType::session);
+
+	    auto token = EjfatURI::TokenType::session;
+	    auto lbmUri_s = lbmPtr->get_URI().to_string(token);
 	    auto addrStr = lbmPtr->get_AddrString();
 	    auto lbId = lbmPtr->get_URI().get_lbId();
 		    
 	    std::cout << "Getting LB status:" << std::endl;
-	    std::cout << "\tContacting: " << uriStr
+	    std::cout << "\tContacting: " << lbmUri_s
 		      << " using address: " << addrStr
 		      << std::endl;
 	    std::cout << "\tLB ID: " << lbId << std::endl;
 	}	
 	
-	Segmenter seg(uri, dataId, evtSourceId, flags);
-	segPtr = &seg;
-	auto rv = sendEvents(seg, pSource.get(), nEvents,
+	segPtr = new Segmenter(ejfatUri, dataId, evtSourceId, flags);
+	auto rv = sendEvents(*segPtr, pSource.get(), nEvents,
 			     evtBufSize, rateGbps, debug);
 	if (rv.has_error()) {
 	    std::cerr << "Segmenter encountered an error: "
 		      << rv.error().message() << std::endl;
 	    exit(EXIT_FAILURE);
 	}
-
     }
-    catch (std::invalid_argument& e) {
-	std::cerr << "Failed to create data source: " << e.what() << std::endl;
+    catch (E2SARException &e) {
+	auto msg = static_cast<std::string>(e);
+	std::cerr << "E2SAR exception: " << msg << std::endl;
 	shutdown();
 	exit(EXIT_FAILURE);
     }
-    catch (const E2SARException& e) {
-	std::cerr << "Unable to create segmenter: "
-		  << static_cast<std::string>(e) << std::endl;
+    catch (std::string& e) {
+	std::cerr <<  "std::string exception: " << e << std::endl;
 	shutdown();
 	exit(EXIT_FAILURE);
     }
+    catch (...) {
+	std::cerr << "Caught unexpected exception type, exiting" << std::endl;
+	shutdown();
+	return EXIT_FAILURE;
+    }
+    
+    shutdown();
     
     return EXIT_SUCCESS;
 }

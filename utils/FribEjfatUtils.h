@@ -23,7 +23,7 @@
 #include <e2sarDPSegmenter.hpp>
 #include <e2sarDPReassembler.hpp>
 
-#include <NSCLDAQFormatFactorySelector.h>
+//#include <NSCLDAQFormatFactorySelector.h>
 
 /** 
  * @file FribEjfatUtils.h
@@ -45,7 +45,7 @@ namespace frib_ejfat {
 	const e2sar::Segmenter::SegmenterFlags& flags);
     void printReassemblerFlags(
 	const e2sar::Reassembler::ReassemblerFlags& flags);
-    ufmt::FormatSelector::SupportedVersions mapVersion(int fmtIn);
+    //ufmt::FormatSelector::SupportedVersions mapVersion(int fmtIn);
 }
     
 #endif

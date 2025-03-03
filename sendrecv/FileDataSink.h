@@ -8,17 +8,17 @@
      http://www.gnu.org/licenses/gpl.txt
 
      Author:
-       Ron Fox
-       Aaron Chester
-       FRIB
-       Michigan State University
-       East Lansing, MI 48824-1321
+           Ron Fox
+           Aaron Chester
+           FRIB
+           Michigan State University
+           East Lansing, MI 48824-1321
 */
 
-#ifndef CFILEDATASINK_H
-#define CFILEDATASINK_H
+#ifndef FILEDATASINK_H
+#define FILEDATASINK_H
 
-#include "CDataSink.h"
+#include "DataSink.h"
 
 #include <unistd.h>
 #include <errno.h>
@@ -34,22 +34,22 @@
  * descriptor because this reduces the risk for leaking a 
  * file.
  */
-class CFileDataSink : public CDataSink
+class FileDataSink : public DataSink
 {
 private: 
     int m_fd; //!< The file descriptor
 
 public:
-    CFileDataSink (int fd);    
-    CFileDataSink (std::string pathname);
+    FileDataSink (int fd);    
+    FileDataSink (std::string pathname);
 
-    virtual ~CFileDataSink ();    
+    virtual ~FileDataSink ();    
 
 private:
     // Copy and assignment are not sensible b/c ownership
     // of the file becomes ambiguous
-    CFileDataSink(const CFileDataSink&);
-    CFileDataSink& operator=(const CFileDataSink&);
+    FileDataSink(const FileDataSink&);
+    FileDataSink& operator=(const FileDataSink&);
 
 
 public:
@@ -66,7 +66,7 @@ public:
     { 
         int retval = fsync(m_fd); 
         if (retval<0) {
-            throw CErrnoException("CFileDataSink::flush() failed");
+            throw CErrnoException("FileDataSink::flush() failed");
         }
     }
 

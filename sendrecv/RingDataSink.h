@@ -15,30 +15,30 @@
 	     East Lansing, MI 48824-1321
 */
 
-#ifndef CRINGDATASINK_H
-#define CRINGDATASINK_H
+#ifndef RINGDATASINK_H
+#define RINGDATASINK_H
 
-#include "CDataSink.h"
+#include "DataSink.h"
 
 #include <string>
 
 class CRingBuffer;
 
-class CRingDataSink : public CDataSink
+class RingDataSink : public DataSink
 {
   private:
     CRingBuffer* m_pRing;
     std::string  m_ringName; 
  
   public:
-    CRingDataSink(std::string ringName);
-    virtual ~CRingDataSink();
+    RingDataSink(std::string ringName);
+    virtual ~RingDataSink();
 
   private:
-    CRingDataSink(const CRingDataSink& rhs);
-    CRingDataSink& operator=(const CRingDataSink& rhs);
-    int operator==(const CRingDataSink& rhs) const;
-    int operator!=(const CRingDataSink& rhs) const;
+    RingDataSink(const RingDataSink& rhs);
+    RingDataSink& operator=(const RingDataSink& rhs);
+    int operator==(const RingDataSink& rhs) const;
+    int operator!=(const RingDataSink& rhs) const;
 
     // The interface functions required by the ABC:
   public:

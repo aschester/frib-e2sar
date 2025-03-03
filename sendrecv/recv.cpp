@@ -39,12 +39,16 @@
 // Other NSCLDAQ headers:
 
 #include <Exception.h>
+#include <URL.h>
 
 // Project headers:
 
-#include "CDataSink.h"
-#include "CFileDataSink.h"
-#include "FribEjfatUtils.h"
+#include "DataSink.h"
+#include "FileDataSink.h"
+#include "RingDataSink.h"
+#include "MapVersion.h"
+
+#include <FribEjfatUtils.h>
 
 namespace po = boost::program_options;
 namespace pt = boost::posix_time;
@@ -77,6 +81,7 @@ shutdown() {
 		      << rv.error().message() << std::endl;
 	}
         reasPtr->stopThreads();
+	delete reasPtr;
     }
 
     boost::this_thread::sleep_for(duration);
@@ -121,7 +126,7 @@ getOpts(int ac, char* av[])
 	 "starting UDP port number on which receiver listens.")
 	("sink,S",
 	 po::value<std::string>()->required(),
-	 "path to output file data sink (*not* a URI)")
+	 "URI of data sink (ringbuffer or file)")
 	("threads,t",
 	 po::value<size_t>()->default_value(1),
 	 "number of reassembler threads")
@@ -203,6 +208,7 @@ prepareToReceive(Reassembler* r)
  * @param r Pointer to our Reassembler instance.
  * @param pSink Pointer to the (for now always a file) data sink we write to.
  * @param factory Factory for creating formatted ring items.
+ * @param version NSCLDAQ format version (for parsing v11 vs. v12 headers).
  * @param durationSec Listening duration; if 0, listen forever.
  * @param debug Enable debugging output.
  * @return EXIT_SUCCESS if successful, E2SAR error otherwise.
@@ -214,9 +220,9 @@ prepareToReceive(Reassembler* r)
  *   unpacking method based on the DAQ version provided by the user.
  */
 result<int>
-recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
-	   CDataSink* pSink, RingItemFactoryBase& factory, int durationSec,
-	   FormatSelector::SupportedVersions version, bool debug=false)
+recvEvents(Reassembler* r,  DataSink* pSink, RingItemFactoryBase& factory,
+	   FormatSelector::SupportedVersions version, int durationSec,
+	   bool debug=false)
 {    
     // Received event information and receiver config. We recycle the buffer
     // with blocking calls to receive data. The extent of good data for a
@@ -238,9 +244,9 @@ recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
     {	
 	// Blocking receive. Use getEvent() for non-blocking:
 	
-	auto rv = r->recvEvent(&evtBuf, &evtBufSize, &evtNum,
-			       &dataId, waitMs);
-	//auto rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
+	// auto rv = r->recvEvent(&evtBuf, &evtBufSize, &evtNum,
+	// 		       &dataId, waitMs);
+	auto rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
         auto next = boost::chrono::steady_clock::now();
 
 	// If duration is set stop listening after that time and exit.
@@ -282,7 +288,7 @@ recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
 	// v11 body header size is not self-inclusive if not present:	
 	if (bodyHdrSize == 0 && version == FormatSelector::v11) {
 	    bodyHdrSize = sizeof(uint32_t); // Inclusive size
-	}	
+	}
 	p += bodyHdrSize;
 	bodySize -= bodyHdrSize; // Whatever is left is the payload.
 
@@ -323,7 +329,7 @@ recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
  * @param r Pointer to Reassembler.
  */
 void
-recvStatsThread(Reassembler *r)
+recvStatsThread(Reassembler* r)
 {
     std::vector<std::pair<EventNum_t, u_int16_t>> lostEvents;
 
@@ -369,6 +375,32 @@ recvStatsThread(Reassembler *r)
 }
 
 /**
+ * @brief Create and return dynamically created sink based on the URI proto.
+ * @param strUrl References the URI string for the sink (ringbuffer or file).
+ * @throw std::runtime_error If the URI protocol is not known.
+ * @return Pointer to the dynamically created sink.
+ * @todo (ASC 3/3/25): Exception if ringbuffer is not localhost.
+ * @todo (ASC 3/3/25): Catch and handle all the ways constructors can fail,
+ *   make sure this exception is handled in main.
+ */
+DataSink*
+makeDataSink(const std::string& strUrl)
+{
+    URL url(strUrl);
+    std::string protocol = url.getProto();
+    std::string path = url.getPath();
+    if (protocol == "tcp" || protocol == "ring") {
+	return new RingDataSink(path);
+    } else if (protocol == "file") {
+	return new FileDataSink(path);
+    } else {
+	std::string msg("unknown proto for sink ");
+	msg += protocol;
+	throw std::runtime_error(msg);
+    }
+}
+
+/**
  * @brief Receive main. Create a data sink and Reassembler; listen for data and
  * write it to the sink.
  */
@@ -383,13 +415,13 @@ main(int argc, char* argv[])
 	/////////////////////////////////////////////////////////////////////
 	// Configure data sink
 	///
-
-	int daqVersion = opts["nscldaq-version"].as<int>();
-	FormatSelector::SupportedVersions version = mapVersion(daqVersion);
-	auto& factory = FormatSelector::selectFactory(version);
 	
-	auto name = opts["sink"].as<std::string>();
-	std::unique_ptr<CFileDataSink> pSink(new CFileDataSink(name));
+	auto daqVersion = opts["nscldaq-version"].as<int>();
+	auto version = mapVersion(daqVersion);
+	auto& factory = FormatSelector::selectFactory(version);
+
+	auto sinkUri = opts["sink"].as<std::string>();
+	std::unique_ptr<DataSink> pSink(makeDataSink(sinkUri));
 	
 	/////////////////////////////////////////////////////////////////////
 	// Configure E2SAR
@@ -400,24 +432,24 @@ main(int argc, char* argv[])
 	auto preferV6 = opts["preferV6"].as<bool>();
 	auto ip_s = opts["ip"].as<std::string>();
 	auto port = opts["port"].as<u_int16_t>();
-	int durationSec = opts["duration"].as<int>();
-	size_t numThreads = opts["threads"].as<size_t>(); // Reassembler
-	size_t deqThreads = opts["deq"].as<size_t>();     // Dequeue/read
-	std::string configFile(opts["config-file"].as<std::string>());
+	auto durationSec = opts["duration"].as<int>();
+	auto numThreads = opts["threads"].as<size_t>(); // Reassembler
+	auto deqThreads = opts["deq"].as<size_t>();     // Dequeue/read
+	auto configFile(opts["config-file"].as<std::string>());
 	bool debug = opts.count("debug");
 
-	std::string uri_s("");
+	std::string ejfatUri_s("");
 	if (opts.count("uri")) {
-	    uri_s = opts["uri"].as<std::string>();
+	    ejfatUri_s = opts["uri"].as<std::string>();
 	}
 	
 	auto flags = getReassemblerFlagsFromINI(configFile);
-	auto uri = getURI(uri_s, tt, preferV6);
+	auto ejfatUri = getURI(ejfatUri_s, tt, preferV6);
 
 	if (debug) {
 	    std::cout << "Using E2SAR version: " << get_Version() << std::endl;
 	    printReassemblerFlags(flags);
-	    std::cout << "Using URI: " << uri.to_string() << std::endl;
+	    std::cout << "Using URI: " << ejfatUri.to_string() << std::endl;
 	}
     
 	/////////////////////////////////////////////////////////////////////
@@ -425,7 +457,7 @@ main(int argc, char* argv[])
 	///
 	
 	ip::address ip = ip::make_address(ip_s);
-	reasPtr = new Reassembler(uri, ip, port, numThreads, flags);
+	reasPtr = new Reassembler(ejfatUri, ip, port, numThreads, flags);
 	
 	boost::thread statsThread(&recvStatsThread, reasPtr);
 
@@ -440,27 +472,35 @@ main(int argc, char* argv[])
 	std::vector<boost::thread> threads;
 	for(size_t i = 0; i < deqThreads; i++)
 	{
-	    boost::thread syncT(recvEvents, reasPtr, flags, pSink.get(),
-				std::ref(factory), durationSec, version,
+	    boost::thread syncT(recvEvents, reasPtr, pSink.get(),
+				std::ref(factory), version, durationSec,
 				debug);
 	    threads.push_back(std::move(syncT)); // Transfer, dont copy!
 	}
 
-	for (auto& t : threads) // Must be a reference.
+	for (auto& t : threads) { // Must be a reference.
 	    t.join();
+	}
 	
-	shutdown(); // Shutdown if duration is not infinite.
-	       
-    } catch (E2SARException &e) {
-	std::cerr << "Unable to create reassembler: "
-		  << static_cast<std::string>(e) << std::endl;
+    }
+    catch (E2SARException &e) {
+	auto msg = static_cast<std::string>(e);
+	std::cerr << "E2SAR exception: " << msg << std::endl;
+	shutdown();
 	exit(EXIT_FAILURE);
     }
-    catch (CException& e) {
-	std::cerr << "Failed to create data sink: "
-		  << e.ReasonText() << std::endl;
+    catch (std::string& e) {
+	std::cerr <<  "std::string exception: " << e << std::endl;
+	shutdown();
+	exit(EXIT_FAILURE);
+    }
+    catch (...) {
+	std::cerr << "Caught unexpected exception type, exiting" << std::endl;
+	shutdown();
 	return EXIT_FAILURE;
     }
+
+    shutdown();  // Shutdown for finite duration run.
     
     return EXIT_SUCCESS;
 }

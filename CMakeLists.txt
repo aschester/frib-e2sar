@@ -1,10 +1,15 @@
 cmake_minimum_required(VERSION 3.18)
-project(E2SAR_Examples VERSION 0.1 DESCRIPTION "E2SAR Examples" LANGUAGES CXX)
+
+project(FRIB_E2SAR VERSION 0.1
+  DESCRIPTION "FRIB-E2SAR data processing"
+  LANGUAGES CXX
+  )
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-find_package(
-  Boost COMPONENTS system url thread chrono random program_options REQUIRED
+find_package(Boost COMPONENTS system url thread chrono random program_options
+  REQUIRED
   )
 find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
@@ -13,25 +18,42 @@ pkg_check_modules(E2SAR REQUIRED e2sar)
 pkg_check_modules(GRPC REQUIRED grpc++)
 pkg_check_modules(Protobuf REQUIRED protobuf)
 
+set(PROJECT_LIBS
+  ${E2SAR_LIBRARIES}
+  ${Boost_LIBRARIES}
+  ${GRPC_LIBRARIES}
+  ${Protobuf_LIBRARIES}
+  Threads::Threads
+  )
+
 set(NSCLDAQ_ROOT "_"  CACHE STRING "Path to NSCLDAQ installation")
 set(NSCLDAQ_INC "${NSCLDAQ_ROOT}/include" CACHE STRING "NSCLDAQ include dir")
 set(NSCLDAQ_LIB "${NSCLDAQ_ROOT}/lib" CACHE STRING "NSCLDAQ lib dir")
 message(STATUS "Using NSLCDAQ: ${NSCLDAQ_ROOT}")
 
-# For now no ringbuffer support from ufmt:
+# Use ufmt from NSCLDAQ installation directory. This ufmt does not have
+# ringbuffer support.
 
 set(UFMT_ROOT "${NSCLDAQ_ROOT}/unifiedformat" CACHE STRING "Path to unified format library installation")
 set(UFMT_INC "${UFMT_ROOT}/include" CACHE STRING "Unified format include dir")
 set(UFMT_LIB "${UFMT_ROOT}/lib" CACHE STRING "Unified format lib dir")
+set(UFMT_LDLIBS
+  ${UFMT_LIB}/libNSCLDAQFormat.so
+  ${UFMT_LIB}/libV10Format.so
+  ${UFMT_LIB}/libV11Format.so
+  ${UFMT_LIB}/libV12Format.so
+  ${UFMT_LIB}/libAbstractFormat.so
+  CACHE STRING "Unified format libs"
+  )
 message(STATUS "Using NSCLDAQ unified format: ${UFMT_ROOT}")
 
-add_compile_options(-g -O2 -Wall)
+add_compile_options(-g -O2 #-Wall
+  )
 
 add_subdirectory(utils)
-add_subdirectory(io)
 add_subdirectory(checkdefaults)
 add_subdirectory(sendrecv)
-add_subdirectory(rawdata)
+#add_subdirectory(rawdata)
 
 set(ini_files reassembler_config.ini segmenter_config.ini)
 install(FILES ${ini_files} DESTINATION ini)

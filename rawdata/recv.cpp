@@ -32,28 +32,24 @@
 #include <e2sar.hpp>
 #include <e2sarDPReassembler.hpp>
 
-// Unified format library:
+// NSCLDAQ headers:
 
 #include <DataFormat.h>
-#include <RingItemFactoryBase.h>
 #include <CRingItem.h>
 #include <URL.h>
-
-// Other NSCLDAQ headers:
-
 #include <Exception.h>
-
-// Project headers:
-
+#include <CDataSinkFactory.h>
 #include <CDataSink.h>
 #include <CFileDataSink.h>
 #include <CRingDataSink.h>
+
+// Project headers:
+
 #include <FribEjfatUtils.h>
 
 namespace po = boost::program_options;
 namespace pt = boost::posix_time;
 using namespace e2sar;
-using namespace ufmt;
 using namespace frib_ejfat;
 
 // Other global config:
@@ -81,6 +77,7 @@ shutdown() {
 		      << rv.error().message() << std::endl;
 	}
         reasPtr->stopThreads();
+	delete reasPtr;
     }
 
     boost::this_thread::sleep_for(duration);
@@ -206,36 +203,6 @@ prepareToReceive(Reassembler* r)
 }
 
 /**
- * @brief Create data sink where output is written.
- * @param name Name of the sink.
- * @param fmt Sink format (ringbuffer or file)
- * @throw std::runtime_error If the sink format is not known.
- * @return Pointer to created data sink.
- * @todo (ASC 2/28/25): Should be protocol-based, not a format flag. Need to 
- * modify concrete sink classes to include a constructor from URL.
- */
-CDataSink*
-makeDataSink(std::string name, std::string fmt)
-{
-    // FILE, rIng, RiNgBuffER nonsense also works:
-    
-    std::transform(name.begin(), name.end(), name.begin(),
-		   [](unsigned char c){ return std::tolower(c); });
-    
-    if (fmt == "file") {
-	return new CFileDataSink(name);
-    } else if (fmt == "ring" || fmt == "ringbuffer" || fmt == "tcp") {
-	return new CRingDataSink(name);
-    } else {
-	std::stringstream msg;
-	msg << "Unrecognized sink format '" << fmt << "'. Supported formats:\n"
-	    << "\t'file' for writing to a file\n"
-	    << "\t'ring,' 'ringbuffer,' or 'tcp' for writing to ring";
-	throw std::runtime_error(msg.str());
-    }
-}
-
-/**
  * @brief Receive and reassemble events.
  * @param r Pointer to our Reassembler instance.
  * @param pSink Pointer to the data sink we write to.
@@ -252,8 +219,7 @@ makeDataSink(std::string name, std::string fmt)
  */
 result<int>
 recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
-	   CDataSink* pSink, RingItemFactoryBase& factory, int durationSec,
-	   FormatSelector::SupportedVersions version, bool debug=false)
+	   CDataSink* pSink, int durationSec, bool debug=false)
 {    
     // Received event information and receiver config. We recycle the buffer
     // with blocking calls to receive data. The extent of good data for a
@@ -311,20 +277,13 @@ recvEvents(Reassembler* r, Reassembler::ReassemblerFlags& flags,
 	auto pHdr = reinterpret_cast<RingItemHeader*>(p);
 	p += sizeof(RingItemHeader);
 	bodySize -= sizeof(RingItemHeader);
-
-	// Body headers exist starting with NSCLDAQ 11. Note that this section
-	// of code breaks compatibility with v10:
 	
 	auto pBodyHdr = reinterpret_cast<BodyHeader*>(p);
 	size_t bodyHdrSize = pBodyHdr->s_size;
-	// v11 body header size is not self-inclusive if not present:	
-	if (bodyHdrSize == 0 && version == FormatSelector::v11) {
-	    bodyHdrSize = sizeof(uint32_t); // Inclusive size
-	}	
 	p += bodyHdrSize;
 	bodySize -= bodyHdrSize; // Whatever is left is the payload.
 	std::unique_ptr<CRingItem> pItem(
-	    factory.makeRingItem(pHdr->s_type, bodySize)
+	    new CRingItem(pHdr->s_type, bodySize)
 	    );
 	if (bodyHdrSize > sizeof(uint32_t)) {
 	    pItem->setBodyHeader(pBodyHdr->s_timestamp,
@@ -422,14 +381,10 @@ main(int argc, char* argv[])
 	/////////////////////////////////////////////////////////////////////
 	// Configure data sink
 	///
-
-	int daqVersion = opts["nscldaq-version"].as<int>();
-	FormatSelector::SupportedVersions version = mapVersion(daqVersion);
-	auto& factory = FormatSelector::selectFactory(version);
 	
-	auto name = opts["sink"].as<std::string>();
-	auto sinkFmt = opts["sink-format"].as<std::string>();
-	std::unique_ptr<CDataSink> pSink(makeDataSink(name, sinkFmt));
+	auto sinkUri = opts["sink"].as<std::string>();
+	CDataSinkFactory factory;
+	std::unique_ptr<CDataSink> pSink(factory.makeSink(sinkUri));
 		
 	/////////////////////////////////////////////////////////////////////
 	// Configure E2SAR
@@ -446,18 +401,18 @@ main(int argc, char* argv[])
 	std::string configFile(opts["config-file"].as<std::string>());
 	bool debug = opts.count("debug");
 
-	std::string uri_s("");
+	std::string ejfatUri_s("");
 	if (opts.count("uri")) {
-	    uri_s = opts["uri"].as<std::string>();
+	    ejfatUri_s = opts["uri"].as<std::string>();
 	}
 	
 	auto flags = getReassemblerFlagsFromINI(configFile);
-	auto uri = getURI(uri_s, tt, preferV6);
+	auto ejfatUri = getURI(ejfatUri_s, tt, preferV6);
 
 	if (debug) {
 	    std::cout << "Using E2SAR version: " << get_Version() << std::endl;
 	    printReassemblerFlags(flags);
-	    std::cout << "Using URI: " << uri.to_string() << std::endl;
+	    std::cout << "Using URI: " << ejfatUri.to_string() << std::endl;
 	}
     
 	/////////////////////////////////////////////////////////////////////
@@ -465,7 +420,7 @@ main(int argc, char* argv[])
 	///
 	
 	ip::address ip = ip::make_address(ip_s);
-	reasPtr = new Reassembler(uri, ip, port, numThreads, flags);
+	reasPtr = new Reassembler(ejfatUri, ip, port, numThreads, flags);
 	
 	boost::thread statsThread(&recvStatsThread, reasPtr);
 
@@ -481,30 +436,33 @@ main(int argc, char* argv[])
 	for(size_t i = 0; i < deqThreads; i++)
 	{
 	    boost::thread syncT(recvEvents, reasPtr, flags, pSink.get(),
-				std::ref(factory), durationSec, version,
-				debug);
+				durationSec, debug);
 	    threads.push_back(std::move(syncT)); // Transfer, dont copy!
 	}
 
-	for (auto& t : threads) // Must be a reference.
+	for (auto& t : threads) { // Must be a reference.
 	    t.join();
-	
-	shutdown(); // Shutdown if duration is not infinite.
-	       
-    } catch (E2SARException &e) {
-	std::cerr << "E2SAR exception: "
-		  << static_cast<std::string>(e) << std::endl;
+	}
+		       
+    }
+    catch (E2SARException &e) {
+	auto msg = static_cast<std::string>(e);
+	std::cerr << "E2SAR exception: " << msg << std::endl;
+	shutdown();
 	exit(EXIT_FAILURE);
     }
-    catch (CException& e) {
-	std::cerr << "NSCLDAQ exception: "
-		  << e.ReasonText() << std::endl;
-	return EXIT_FAILURE;
-    } catch (std::exception& e) {
-	std::cerr << "C++ exception: "
-		  << e.what() << std::endl;
+    catch (std::string& e) {
+	std::cerr <<  "std::string exception: " << e << std::endl;
+	shutdown();
+	exit(EXIT_FAILURE);
+    }
+    catch (...) {
+	std::cerr << "Caught unexpected exception type, exiting" << std::endl;
+	shutdown();
 	return EXIT_FAILURE;
     }
+    
+    shutdown(); // Shutdown for finite duration run.
     
     return EXIT_SUCCESS;
 }
