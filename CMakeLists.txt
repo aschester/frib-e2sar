@@ -73,3 +73,7 @@ add_subdirectory(evtbuild)
 set(ini_files reassembler_config.ini segmenter_config.ini)
 install(FILES ${ini_files} DESTINATION ini)
 
+install(DIRECTORY scripts/ DESTINATION scripts FILE_PERMISSIONS
+  OWNER_READ OWNER_WRITE OWNER_EXECUTE
+  GROUP_READ GROUP_WRITE GROUP_EXECUTE
+  WORLD_READ WORLD_EXECUTE)
