@@ -16,5 +16,6 @@ mkdir -p build
 
 (cd build ;
  cmake .. -DNSCLDAQ_ROOT=$DAQROOT -DCMAKE_INSTALL_PREFIX=$prefix ;
+ make clean ;
  cmake --build . -j4 ;
  cmake --install .)

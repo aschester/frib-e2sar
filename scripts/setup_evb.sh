@@ -1,13 +1,13 @@
 #!/bin/bash
 # Start Tclsh \
-exec /usr/bin/wish ${0} ${@}
+    exec /usr/bin/wish ${0} ${@}
 
 ##
-# @file build.sh
-# @brief Build events from FRIB-E2SAR pipeline
+# @file setup_evb.sh
+# @brief Initialize EVB and configure clients.
 #
 
-# @todo (ASC 3/4/25): Ring names, glom dt, etc. configurable on cmdline
+## @todo (ASC 3/7/25): Configure destring, glombuild, etc. via command line.
 
 lappend auto_path [file join $::env(DAQROOT) TclLibs]
 
@@ -28,15 +28,19 @@ proc launchRingSources {} {
 	   exit	
        }
        set port [EVBC::getOrdererPort]
-
-       set reas0 "[file join $daqbin ringFragmentSource] --evbhost=localhost --evbport=$port --info=reassembler0 --ring=tcp://localhost/reas0_sort --ids=0 --timeout=20 --expectbodyheaders"
+       puts "Orderer listening on $port"
+       
+       # Add additional clients here:
+       
+       set reas0 "[file join $daqbin ringFragmentSource] --evbhost=localhost --evbport=$port --info=reas0 --ring=tcp://localhost/reas0_sort --ids=0 --expectbodyheaders"
        puts $reas0
+
+       # Start all clients:
        
        exec {*}$reas0 &
-       
 }
 
-EVBC::initialize -glomdt 1000 -gui on -destring frib_e2sar_evb -glombuild true
+EVBC::initialize -gui on -destring frib_e2sar_evb -glombuild yes -glomdt 1000
 EVBC::onBegin
 
 set output [Output::getInstance .output]
@@ -44,8 +48,6 @@ grid .output -sticky nsew
 grid rowconfigure . {0} -weight 1
 grid columnconfigure . {0} -weight 1
 
-after [expr 2*3000]
-
-puts $::EVBC::pipefd "EVB::config set window 40"
+after [expr 1000]
 
 launchRingSources

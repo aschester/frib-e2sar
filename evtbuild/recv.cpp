@@ -70,6 +70,23 @@ shutdown() {
     
     if (reasPtr != nullptr)
     {
+	auto stats = reasPtr->getStats();
+	std::cout << "End-of-run stats:" << std::endl;
+	std::cout << "\tCurrent time: " << pt::second_clock::local_time()
+		  << std::endl;
+	std::cout << "\tEvents Received: " << stats.get<1>() << std::endl;
+	std::cout << "\tEvents Lost: " << stats.get<0>() << std::endl;
+	std::cout << "\tData Errors: " << stats.get<4>() << std::endl;
+	if (stats.get<4>() > 0) {
+	    std::cout << "\tLast Data Error: "
+		      << strerror(stats.get<2>()) << std::endl;
+	    std::cout << "\tgRPC Errors: " << stats.get<3>() << std::endl;
+	}
+	if (stats.get<5>() != E2SARErrorc::NoError) {
+	    std::cout << "\tLast E2SARError code: "
+		      << stats.get<5>() << std::endl;
+	}
+	
         std::cout << "Deregistering worker" << std::endl;
         auto rv = reasPtr->deregisterWorker();
         if (rv.has_error()) {
@@ -123,9 +140,6 @@ getOpts(int ac, char* av[])
 	("sink,S",
 	 po::value<std::string>()->required(),
 	 "URI of data sink")
-	("sink-format,f",
-	 po::value<std::string>()->default_value("ring"),
-	 "sink format (ringbuffer or file)")
 	("threads,t",
 	 po::value<size_t>()->default_value(1),
 	 "number of reassembler threads")
@@ -206,12 +220,6 @@ prepareToReceive(Reassembler* r)
  * @param durationSec Listening duration; if 0, listen forever.
  * @param debug Enable debugging output.
  * @return EXIT_SUCCESS if successful, E2SAR error otherwise.
- * @note (ASC 11/26/24): Not compatible with NSCLDAQ 10 at the moment. 
- *   The data unpacking from an arbitrary buffer containing a complete ring 
- *   item is complicated by the fact the body headers do not exist in v10. 
- *   Easiest approach is to leave as-is and assume nobody will ever try this 
- *   with v10 data. A more complete solution would entail switching the buffer
- *   unpacking method based on the DAQ version provided by the user.
  */
 result<int>
 recvEvents(Reassembler* r, CDataSink* pSink, int durationSec, bool debug=false)
@@ -369,8 +377,10 @@ int
 main(int argc, char* argv[])
 {    
     auto opts = getOpts(argc, argv); // Command-line options.
-    signal(SIGINT, ctrlCHandler);    // Ctrl-C signal:
+    signal(SIGINT, ctrlCHandler);    // Ctrl-C signal.
 
+    auto start = pt::second_clock::local_time();
+    
     try {
 
 	/////////////////////////////////////////////////////////////////////
@@ -416,8 +426,9 @@ main(int argc, char* argv[])
 	
 	ip::address ip = ip::make_address(ip_s);
 	reasPtr = new Reassembler(ejfatUri, ip, port, numThreads, flags);
-	
-	boost::thread statsThread(&recvStatsThread, reasPtr);
+
+	// Lots of output to stdout:
+	//boost::thread statsThread(&recvStatsThread, reasPtr);
 
 	auto rv = prepareToReceive(reasPtr);
 	if (rv.has_error()) {
@@ -426,10 +437,9 @@ main(int argc, char* argv[])
 	    shutdown();
 	    exit(EXIT_FAILURE);
 	}
-
+	
 	std::vector<boost::thread> threads;
-	for(size_t i = 0; i < deqThreads; i++)
-	{
+	for(size_t i = 0; i < deqThreads; i++) {
 	    boost::thread syncT(recvEvents, reasPtr, pSink.get(), durationSec,
 				debug);
 	    threads.push_back(std::move(syncT)); // Transfer, dont copy!
