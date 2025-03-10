@@ -1,43 +1,92 @@
 # FRIB-E2SAR dev
 
-This is a repository for various E2SAR-related development at FRIB. The subdirectories contain examples demonstrating how to perform simple initialization and segmenter-reassembly tasks up to and including an E2SAR workflow for FRIBDAQ data (`sendrecv`).
+This is a repository for various E2SAR-related development codes for FRIB data processing. The subdirectories contain examples of simple initialization and segmenter-reassembly workflows as well as configuration files and run scripts. The scripts are used to run FRIBDAQ services to build and record event data on the reassembly side of the E2SAR pipeline.
+
+This document is not intended as a comprehensive user's manual for this project, rather it is a loose and evolving set of developer notes so I (ASC) don't forget how to do this stuff.
 
 ## Requirements
 
 - E2SAR software and prereqs (https://github.com/JeffersonLab/E2SAR/wiki/Code-and-Binaries)
 - NSCLDAQ 12.1 or later
-- FRIB unified format library
+- FRIB unified format library 2.2-004 or later
 - CMake 3.18
 
-A Docker container based on Debian 11 (Bullseye) with preinstalled E2SAR binaries and prereqs is available here: https://hub.docker.com/r/aschester/e2sar-bullseye.
+A Docker image based on Debian 11 (Bullseye) with preinstalled E2SAR binaries and prereqs is available here: https://hub.docker.com/r/aschester/e2sar-bullseye. The Docker image can be used to build images with Apptainer, Shifter, etc.
 
-## Building the examples
+## Building the codes
 
-- Clone the repository: `https://github.com/aschester/frib-e2sar.git`
-- Assuming the environment is configured correctly, build using `CMake`:
+- Clone the repository from https://github.com/aschester/frib-e2sar.git
+- Configure the environment in the container by sourcing some NSCLDAQ 12.1 with ufmt library installed at $DAQROOT/unifiedformat or use the UFMT environment variable to point to broken-out ufmt library 2.2-004 or later.
+- Build the project using CMake:
 
 ```
 mkdir build && cd build
-cmake .. -DNSCLDAQ_ROOT=/path/to/nscldaq/dir
+cmake .. -DNSCLDAQ_ROOT=/path/to/nscldaq/dir -DCMAKE_INSTALL_PREFIX=/path/to/install/dir
 cmake --build .
-cmake --install . --prefix "/path/to/installation/dir"
+cmake --install .
 ```
 
-- You can override the default unified format path by setting an alternative during the first stage of the build with `-DUFMT_ROOT=/path/to/ufmt`.
-- To build in parallel, use the `-j` flag: `cmake --build . -j N` where `N` is the number of cores you'd like to use.
+You can override the default unified format path by setting an alternative during the first stage of the build with `-DUFMT_ROOT=/path/to/ufmt`. Parallel builds are supported by the `-j` flag, where `-jN` will use `N` cores to build. Note that due to some internal dependencies the build _may_ fail if `N` is "large."
+
+The install directory contians five (5) folders:
+- bin/     : contains project binaries
+- include/ : contains project headers
+- lib/     : contains project libraries, for now libEjfatIO.so, which provides unified format compliant data sources and sinks. It is unused for the time being but its trivial to build and may be of some use later. Who knows.
+- ini/     : example initialization files for the Segmenter and Reassembler
+- scripts/ : scripts to setup and run the FRIB event-building pipeline
 
 ## Running the examples
 
-- Installation `/bin` directory contains executables, `/include` directory all project headers.
-- Running programs with the `-h` option will describe how to use them.
-- Sensible defaults are set in most cases.
-- For codes using initialization files it is easy to switch between settings by pointing the code at a different config file at runtime.
-- Most codes will expect an EJFAT URI either passed as a command line or stored in an environment variable. Generally anything passed on the command line will override any preset settings. For testing I usually take the second approach:
+The installation /bin directory contains executables, organized by their function:
+- checkdefaults/ : print some default information about the E2SAR configuration
+- sendrecv/      : sender and receiver for built FRIBDAQ data
+- evtbuild/      : codes for sending raw data through E2SAR for reassembler-side event building. Running the event building pipeline is covered in detail in the next section.
+Running programs with the `-h` option will show all command-line options and their defaults. Sensible defaults for parameters are set in most cases. All programs which use the E2SAR streaming libraries expect an EJFAT URI either passed on the command line or stored in an environment variable. Anything passed on the command line when running the program will override preset values.
+
+The EJFAT URI has the form:
+
+`ejfat[s]://[<token>@]<cp_host>:<cp_port>/[lb/<lb_id>][?[data=<data_host:[<data_port>]>][&sync=<sync_host>:<sync_port>][&sessionid=<session_id>]].`
+
+For testing I usually export the URI or define it in an environment file which sets the environment in the container at runtime. An example URI is shown below:
 
 `export EJFAT_URI="ejfat://mytoken@127.0.0.1:23456/lb/123?data=127.0.0.1:23457&sync=127.0.0.1:23458"`.
 
-The quotes on the string may be needed to prevent your shell from interpreting `&` as a shell command. For point-to-point reassembly, the receiver should listen on the data port, which is in this case 23457.
+The quotes on the string may be needed to prevent your shell from interpreting `&` as a shell command. The above URI is used for one-to-one Segmenter-to-Reassembler streaming without an EJFAT load balancer. Note that in this case, the `cp_host`, `data_host` and `sync_host` are all 127.0.0.1 i.e., localhost. For one-to-one reassembly, the receiver should listen on the data port, which in this example is 23457.
+
+### Running the FRIB-E2SAR event building pipeline
+
+The E2SAR event-building pipeline is controlled via two scripts:
+- reas_and_sort.py : runs the Reassembler and ddasSort. The Reassembler outputs reassembled raw data into a raw ringbuffer. ddasSort reads from this ringbuffer and puts its output into a sorted ringbuffer.
+- run_combined.py : run the combined event-building pipeline and eventlogger to build sorted data into events an write event data to a file.
+The scripts can be started any order. The startup time for both is rather short but not instant. A ready state looks like:
+
+#### reas_and_sort.py
+```
+<daq-ejfat-01:e2sar-analysis >sw/scripts/reas_and_sort.py 
+Using DAQBIN: /usr/opt/daq/12.1-pre6.e2sar/bin
+Running reas command: /user/0400x/e2sar-analysis/sw/bin/evtbuild/recv -S tcp://localhost/reas0_raw -t 4
+STARTED OK /user/0400x/e2sar-analysis/sw/bin/evtbuild/recv -S tcp://localhost/reas0_raw -t 4
+Running sort command: /usr/opt/daq/12.1-pre6.e2sar/bin/ddasSort -s tcp://localhost/reas0_raw -S reas0_sort -W 10.0
+STARTED OK /usr/opt/daq/12.1-pre6.e2sar/bin/ddasSort -s tcp://localhost/reas0_raw -S reas0_sort -W 10.0
+```
+
+#### run_combined.py
+```
+<daq-ejfat-01:e2sar-analysis >sw/scripts/run_combined.py 
+Using DAQBIN: /usr/opt/daq/12.1-pre6.e2sar/bin
+Running evtbuild command: /user/0400x/e2sar-analysis/sw/scripts/setup_evb.sh
+Running eventlog command: /usr/opt/daq/12.1-pre6.e2sar/bin/eventlog -s tcp://localhost/frib_e2sar_evb --number-of-sources=1 --oneshot
+Recording run...
+```
+
+In the latter case an event builder GUI will be running showing the registered data source(s). Configuration of ring sources and initialization of the evb is done in the setup_evb.sh script. For the time being, this is all hardcoded.
+
+To send data through the pipeline, run the `send` program installed at `bin/evtbuild/send` under your top-level installation directory. At minimum the sort program requires an NSLCDAQ 12 data soruce URI (file:// or tcp://) and a configuration file describing how to run the reassembler.
+
+Once the proper number of end runs is seen, the event-building pipeline and eventlogger will restart and wait to receive more data.
 
 ## Notes
 
-- Ensure that useCP is set to the same value in both the segmenter and reassembler configuration files (todo: alternate config method which sets CP use for the  whole pipeline)
+- Ensure that useCP is set to the same value in both the segmenter and reassembler configuration files.
+- Pipeline configuration is entirely hardcoded, so be cautious when changing e.g., ringbuffer names.
+- In "most" cases the pipeline can safely shut itself down when it encounters and error. Ctrl-C (SIGINT) will be propagated to all child processes and is generally the safest way to exit the python scripts. In some cases hanging processes must be killed on the command line. Most likely this is going to be a stray ringFragmentSource.

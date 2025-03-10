@@ -24,24 +24,34 @@
 #include <iostream>
 
 using namespace e2sar;
-using namespace ufmt;
+// using namespace ufmt;
 
 /**
- * @brief Dump the buffer to stderr.
+ * @brief Byte dump of buffer to stderr.
  * @param buf Pointer to the start of the data buffer we're dumping
  * @param nBytes Number of bytes to dump
  */
 void
 frib_ejfat::dumpBuffer(u_int8_t* buf, size_t nBytes) {
-    std::cerr << "------------------------------------------" << std::endl;
+    size_t printed = 0; // Total bytes printed (incl. padding)
+    size_t perLine = 8; // Bytes per line
+    
+    std::cerr << "-----------------------" << std::endl;
     std::cerr << std::hex;
-    for (size_t i = 0; i < nBytes; i++) {
-	for (int j = 0; j < 8; j++) {
-	    if (i+1 >= nBytes) break;
-	    std::cerr << *buf << " ";
-	    buf++;
-	}
-	std::cerr << std::endl;
+    
+    while (printed < nBytes) {
+        size_t bytesToPrint = std::min(nBytes - printed, perLine);
+        for (size_t i = 0; i < bytesToPrint; i++) {
+            std::cerr << std::setw(2) << std::setfill('0')
+		      << unsigned(*buf) << " ";
+            buf++;
+        }
+
+        for (size_t i = bytesToPrint; i < perLine; ++i) {
+            std::cerr << "   ";
+        }
+	
+        printed += perLine;
     }
     std::cerr << std::dec << std::endl;
 }
@@ -193,23 +203,23 @@ frib_ejfat::printReassemblerFlags(const Reassembler::ReassemblerFlags& flags)
     std::cout <<"\tmax_factor\t" << flags.max_factor << std::endl;
 }
 
-/**
- * @brief Map the version we get from the command line to a factory version.
- * @param fmtIn Format the user requested.
- * @throw std::invalid_argument Bad format version.
- * @return Factory version ID (from the enum).
- */
-FormatSelector::SupportedVersions
-frib_ejfat::mapVersion(int fmtIn)
-{
-    switch (fmtIn) {
-    case 12:
-	return FormatSelector::v12;
-    case 11:
-	return FormatSelector::v11;
-    case 10:
-	throw std::invalid_argument("NSCLDAQ 10 is not currently supported");
-    default:
-	throw std::invalid_argument("Invalid DAQ format version specifier");
-    }
-}
+// /**
+//  * @brief Map the version we get from the command line to a factory version.
+//  * @param fmtIn Format the user requested.
+//  * @throw std::invalid_argument Bad format version.
+//  * @return Factory version ID (from the enum).
+//  */
+// FormatSelector::SupportedVersions
+// frib_ejfat::mapVersion(int fmtIn)
+// {
+//     switch (fmtIn) {
+//     case 12:
+// 	return FormatSelector::v12;
+//     case 11:
+// 	return FormatSelector::v11;
+//     case 10:
+// 	throw std::invalid_argument("NSCLDAQ 10 is not currently supported");
+//     default:
+// 	throw std::invalid_argument("Invalid DAQ format version specifier");
+//     }
+// }

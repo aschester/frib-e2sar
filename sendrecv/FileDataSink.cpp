@@ -15,7 +15,7 @@
              East Lansing, MI 48824-1321
 */
 
-#include "CFileDataSink.h"
+#include "FileDataSink.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -39,14 +39,13 @@ using namespace ufmt;
  * \param a file descriptor to define the sink
  * \throw std::string
  */
-CFileDataSink::CFileDataSink(int fd)
+FileDataSink::FileDataSink(int fd)
     : m_fd(fd)
 {
     if (!isWritable()) {
-	throw std::string("CFileDataSink::CFileDataSink(int) file descriptor "
+	throw std::string("FileDataSink::FileDataSink(int) file descriptor "
 			  "is not write only");
     }
-
 }
 
 
@@ -54,8 +53,8 @@ CFileDataSink::CFileDataSink(int fd)
  * @brief Construct from a file name
  * @details
  * Obtains a file descriptor given a valid pathname. If file doesn't exist
- * a new file is opened with RDWR permissions. If the file 
- * doesn't exist, it is created with read/write permissions. 
+ * a new file is opened with RDWR permissions. If the file exists, its contents
+ * are overwritten.
  *
  * @param fname A file descriptor to define the sink
  *
@@ -66,21 +65,21 @@ CFileDataSink::CFileDataSink(int fd)
  *        if not, the string should at least have strerror in it for the
  *        errno so the user can know why the file could not be opened.
  */
-CFileDataSink::CFileDataSink(std::string fname)
+FileDataSink::FileDataSink(std::string fname)
     : m_fd(-1)
 {
     // Open or create if the file doesn't exist
-    m_fd = open(fname.c_str(),O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR );
+    m_fd = open(fname.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
     // check to see if failed
-    if (m_fd==-1) {
-	std::string errmsg("CFileDataSink::CFileDataSink(std::string)");
+    if (m_fd == -1) {
+	std::string errmsg("FileDataSink::FileDataSink(std::string)");
 	errmsg += " failed to open file ";
 	errmsg += fname;
 	throw CErrnoException(errmsg);
     }
 
     if (!isWritable()) {
-	throw std::string("CFileDataSink::CFileDataSink(std::string) file "
+	throw std::string("FileDataSink::FileDataSink(std::string) file "
 			  "descriptor is not write only");
     }
 }
@@ -90,7 +89,7 @@ CFileDataSink::CFileDataSink(std::string fname)
  * If the file descriptor does not refer to STDOUT_FILENO and
  * and it points to a valid file, then close it.
  */
-CFileDataSink::~CFileDataSink()
+FileDataSink::~FileDataSink()
 {
     // Can't close stdout
     if (m_fd!=STDOUT_FILENO && m_fd>0) {
@@ -109,7 +108,7 @@ CFileDataSink::~CFileDataSink()
  *
  * @throw CErrnoException When io failure
  */
-void CFileDataSink::putItem(const CRingItem& item)
+void FileDataSink::putItem(const CRingItem& item)
 {
     // Get the underlying structure containing the state 
     const RingItem* pItem = item.getItemPointer();
@@ -130,13 +129,13 @@ void CFileDataSink::putItem(const CRingItem& item)
  *
  * @throw CErrnoException
  */
-void CFileDataSink::put(const void* pData, size_t nBytes)
+void FileDataSink::put(const void* pData, size_t nBytes)
 {
     try {
 	fmtio::writeData(m_fd, pData, nBytes);
     } catch (int err) {
 	errno = err; // CErrnoException captures the global errno.
-	std::string errmsg("CFileDataSink::putItem(const CRingItem&)"); 
+	std::string errmsg("FileDataSink::putItem(const CRingItem&)"); 
 	errmsg += " : writeData failed ";
  
 	throw CErrnoException(errmsg);
@@ -149,13 +148,13 @@ void CFileDataSink::put(const void* pData, size_t nBytes)
  *
  * @throw CErrnoException if fcntl failed while checking
  */
-bool CFileDataSink::isWritable() 
+bool FileDataSink::isWritable() 
 {
     // Get the status flags of the file
     int status = fcntl(m_fd, F_GETFL);
 
     if (status < 0) {
-	std::string errmsg ("CFileDataSink::isWritable()");
+	std::string errmsg ("FileDataSink::isWritable()");
 	errmsg += " failed checking file status flags";
 	throw CErrnoException(errmsg);
     }; 
