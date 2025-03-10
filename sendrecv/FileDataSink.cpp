@@ -31,12 +31,12 @@ using namespace ufmt;
 
 /**
  * @brief Construct from a file descriptor
- * @detials
+ * @details
  * Ownership of this file descriptor is transferred to the
  * this object. Write operations on the file descriptor must 
  * be permissible or an exception is thrown.
  *
- * \param a file descriptor to define the sink
+ * \param fd a file descriptor to define the sink
  * \throw std::string
  */
 FileDataSink::FileDataSink(int fd)
