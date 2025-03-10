@@ -1,8 +1,3 @@
-project(FribEjfatUtils VERSION 0.1
-  DESCRIPTION "Utilities for FRIB-E2SAR processing"
-  LANGUAGES CXX
-  )
-
 set(src FribEjfatUtils.cpp)
 set(headers FribEjfatUtils.h)
 set(lib FribEjfatUtils)

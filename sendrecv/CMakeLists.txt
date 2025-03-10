@@ -1,8 +1,3 @@
-project(SendRecv VERSION 0.1
-  DESCRIPTION "Transmit Unified Format Library event data"
-  LANGUAGES CXX
-  )
-
 set(CMAKE_INSTALL_RPATH ${UFMT_LIB} ${NSCLDAQ_LIB})
 
 ##

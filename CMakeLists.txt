@@ -69,6 +69,7 @@ add_subdirectory(utils)
 add_subdirectory(checkdefaults)
 add_subdirectory(sendrecv)
 add_subdirectory(evtbuild)
+add_subdirectory(docs)
 
 install(DIRECTORY ini DESTINATION ini
   PATTERN "*.*~" EXCLUDE

@@ -1,8 +1,3 @@
-project(EvtBuild VERSION 0.1
-  DESCRIPTION "Transmit NSCLDAQ v12 raw data for remote event building"
-  LANGUAGES CXX
-  )
-
 set(CMAKE_INSTALL_RPATH ${NSCLDAQ_LIB})
 
 set(common_includes
