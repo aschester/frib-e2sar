@@ -5,8 +5,12 @@
 # @details Create the reassembly and sorting pipeline
 #
 
-## @todo (ASC 3/7/25): Configure parameters via command line.
+##
+# @note (ASC 3/11/25): Reassembly and sorting assumed to occur on localhost,
+# which may be a different host machine than the event building.
+#
 
+import argparse
 import os
 import shlex
 import signal
@@ -26,6 +30,27 @@ def handler(signum, frame):
     print_proc_results(reas_proc)
     sys.exit(0)
 
+user = os.getlogin()
+parser = argparse.ArgumentParser(
+    prog="run_evb.py",
+    description="Run EVB pipe and eventlog for FRIB-E2SAR workflows",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter
+)
+parser.add_argument("-s", "--rawring",
+                    help="source ringbuffer for raw data (localhost)",
+                    default=f"{user}_raw")
+parser.add_argument("-S", "--sortring",
+                    help="sink ringbuffer for sorted data (localhost)",
+                    default=f"{user}_sort")
+parser.add_argument("-t", "--threads",
+                    help="read threads for Reassembler (1 per socket)",
+                    default=4)
+parser.add_argument("-W", "--window",
+                    help="accumulation window for sorter",
+                    default=10)
+args = parser.parse_args()
+raw_ring_uri = f"tcp://localhost/{args.rawring}"
+    
 signal.signal(signal.SIGINT, handler)
 
 # NSCLDAQ needed for ddasSort:    
@@ -43,7 +68,7 @@ else:
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 top_dir = os.path.dirname(script_dir) # Top level install directory
-reas_cmd = f"{top_dir}/bin/evtbuild/recv -S tcp://localhost/reas0_raw -t 4"
+reas_cmd = f"{top_dir}/bin/evtbuild/recv -S {raw_ring_uri} -t {args.threads}"
 reas_args = shlex.split(reas_cmd)
 print(f"Running reas command: {reas_cmd}")
 
@@ -57,8 +82,8 @@ with subprocess.Popen(reas_args, stdout=subprocess.PIPE,
     # Sort command:
     #
     
-    sort_cmd = f"{daqbin}/ddasSort -s tcp://localhost/reas0_raw " \
-        f"-S reas0_sort -W 10.0"
+    sort_cmd = f"{daqbin}/ddasSort -s {raw_ring_uri} -S {args.sortring} " \
+        f"-W {args.window}"
     sort_args = shlex.split(sort_cmd)    
     print(f"Running sort command: {sort_cmd}")    
     sort_proc = subprocess.Popen(sort_args, stdout=subprocess.PIPE,
