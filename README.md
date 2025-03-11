@@ -10,6 +10,7 @@ This document is not intended as a comprehensive user's manual for this project,
 - NSCLDAQ 12.1 or later
 - FRIB unified format library 2.2-004 or later
 - CMake 3.18
+- Compiler support for C++17 standard
 
 A Docker image based on Debian 11 (Bullseye) with preinstalled E2SAR binaries and prereqs is available here: https://hub.docker.com/r/aschester/e2sar-bullseye. The Docker image can be used to build images with Apptainer, Shifter, etc.
 
@@ -55,10 +56,11 @@ The quotes on the string may be needed to prevent your shell from interpreting `
 
 ### Running the FRIB-E2SAR event building pipeline
 
-The E2SAR event-building pipeline is controlled via two scripts:
-- reas_and_sort.py : runs the Reassembler and ddasSort. The Reassembler outputs reassembled raw data into a raw ringbuffer. ddasSort reads from this ringbuffer and puts its output into a sorted ringbuffer.
-- run_combined.py : run the combined event-building pipeline and eventlogger to build sorted data into events an write event data to a file.
-The scripts can be started any order. The startup time for both is rather short but not instant. A ready state looks like:
+The E2SAR event-building pipeline is controlled via two scripts and an event-builder configuration file:
+- `reas_and_sort.py` : runs the Reassembler and ddasSort. The Reassembler outputs reassembled raw data into a raw ringbuffer. ddasSort reads from this ringbuffer and puts its output into a sorted ringbuffer.
+- `run_evb.py` : run the combined event-building pipeline with an eventlogger to build sorted data into events an write event data to a file.
+
+The `reas_and_sort.py` script should be run first, as it will create the sort ring needed by the event-building stage. `run_evb.py` will call your configuration script to configure the event-building pipeline; the configuration script initializes the EVB pipeline and starts the data sources feeding the event builder. The data sources in this file must be input by hand, similar to a `ReadoutCallouts.tcl`; the destination ring and event-building window can be set on the command line. By default the program assumes the setup script is called `setup_evb.sh` and exists in the directory where you launch `run_evb.py` unless another path is provided at runtime. An example `setup_evb.sh` is installed in the scripts/ directory. Both the Reassembler/sorter and the EVB/logger applications will tell you when they are ready to receive data. A ready state looks like:
 
 #### reas_and_sort.py
 ```
@@ -70,20 +72,18 @@ Running sort command: /usr/opt/daq/12.1-pre6.e2sar/bin/ddasSort -s tcp://localho
 STARTED OK /usr/opt/daq/12.1-pre6.e2sar/bin/ddasSort -s tcp://localhost/reas0_raw -S reas0_sort -W 10.0
 ```
 
-#### run_combined.py
+#### run_evb.py
 ```
-<daq-ejfat-01:e2sar-analysis >sw/scripts/run_combined.py 
+<daq-ejfat-01:e2sar-analysis >sw/scripts/run_evb.py 
 Using DAQBIN: /usr/opt/daq/12.1-pre6.e2sar/bin
 Running evtbuild command: /user/0400x/e2sar-analysis/sw/scripts/setup_evb.sh
 Running eventlog command: /usr/opt/daq/12.1-pre6.e2sar/bin/eventlog -s tcp://localhost/frib_e2sar_evb --number-of-sources=1 --oneshot
 Recording run...
 ```
 
-In the latter case an event builder GUI will be running showing the registered data source(s). Configuration of ring sources and initialization of the evb is done in the setup_evb.sh script. For the time being, this is all hardcoded.
+In the latter case an event builder GUI will be running showing the registered data source(s). Configuration of ring sources and initialization of the evb is performed in the `setup_evb.sh` script. To send data through the pipeline, run the `send` program installed at `bin/evtbuild/send` under your top-level installation directory. At minimum the Reassembly/sorting code requires an NSLCDAQ 12 data soruce URI (file:// or tcp://) and a configuration file describing how to run the Reassembler.
 
-To send data through the pipeline, run the `send` program installed at `bin/evtbuild/send` under your top-level installation directory. At minimum the sort program requires an NSLCDAQ 12 data soruce URI (file:// or tcp://) and a configuration file describing how to run the reassembler.
-
-Once the proper number of end runs is seen, the event-building pipeline and eventlogger will restart and wait to receive more data.
+Once the proper number of end runs is seen, the event-building pipeline and eventlogger will restart and wait to receive more data. This process takes approximately 5 seconds.
 
 ## Notes
 

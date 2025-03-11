@@ -10,12 +10,13 @@ if [ -z "$DAQROOT" ]; then
     . /usr/opt/daq/12.1-pre6.e2sar/daqsetup.bash
 fi
 
-mkdir -p build
 
 # Clean build and install:
 
-(cd build ;
+rm -rf build
+
+(mkdir build ;
+ cd build ;
  cmake .. -DNSCLDAQ_ROOT=$DAQROOT -DCMAKE_INSTALL_PREFIX=$prefix ;
- make clean ;
  cmake --build . -j4 ;
  cmake --install .)

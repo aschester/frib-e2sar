@@ -18,6 +18,38 @@ package require EVB::GUI
 package require evbcallouts
 package require ring
 package require ui
+package require cmdline
+
+# Options:
+
+set usage "Setup EVB for FRIB-E2SAR workflows\nOptions:"
+set options {
+    {sink.arg   ""   "Ringbuffer sink for built data"}
+    {window.arg 1000 "Event build coincidence window in nanoseconds"}
+}
+set mandatory [list sink]
+
+proc usage {} {
+    puts stderr [::cmdline::usage $::options $::usage]
+}
+
+#  Parse the command line arguments:
+
+set parsed [cmdline::getoptions argv $options $usage]
+set parsed [dict create {*}$parsed]
+
+foreach option $mandatory {
+    if {[dict get $parsed $option] eq ""} {
+        puts stderr "\nERROR: -$option is required\n"
+        usage
+        exit -1
+    }
+}
+
+set evbring [dict get $parsed sink]
+set glomdt  [dict get $parsed window]
+
+# Start EVB:
 
 wm title . "FRIB-E2SAR EVB"
 
@@ -40,7 +72,7 @@ proc launchRingSources {} {
        exec {*}$reas0 &
 }
 
-EVBC::initialize -gui on -destring frib_e2sar_evb -glombuild yes -glomdt 1000
+EVBC::initialize -gui on -destring $evbring -glombuild yes -glomdt $glomdt
 EVBC::onBegin
 
 set output [Output::getInstance .output]
