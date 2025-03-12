@@ -179,7 +179,7 @@ freeBuffer(boost::any a)
 }
 
 /**
- * @breif Add data to the send queue and send it.
+ * @brief Add data to the send queue and send it.
  * @param s References our Segmenter instance.
  * @param pSource Pointer to data source where we get ring items.
  * @param nEvents Number of events to send.

@@ -14,6 +14,13 @@
              East Lansing, MI 48824-1321
 */
 
+/** 
+ * @file FribEjfatUtils.h
+ * @brief Define some useful functions for EJFAT processing.
+ * @details
+ * Functions exist in the frib_ejfat namespace.
+ */
+
 #ifndef FRIBEJFATUTILS_H
 #define FRIBEJFATUTILS_H
 
@@ -23,20 +30,15 @@
 #include <e2sarDPSegmenter.hpp>
 #include <e2sarDPReassembler.hpp>
 
-//#include <NSCLDAQFormatFactorySelector.h>
-
-/** 
- * @file FribEjfatUtils.h
- * @brief Define some useful functions for EJFAT processing.
- * @details
- * Functions exist in the frib_ejfat namespace.
+/**
+ * @namespace frib_ejfat
+ * @brief Namespace for utility functions.
  */
-
-namespace frib_ejfat {  
+namespace frib_ejfat {
     void dumpBuffer(u_int8_t* buf, size_t nBytes);
     e2sar::EjfatURI getURI(const std::string uri,
 			   const e2sar::EjfatURI::TokenType& tt,
-			   const bool preferV6);
+			   const bool preferV6=false);
     e2sar::Segmenter::SegmenterFlags getSegmenterFlagsFromINI(
 	std::string fname);
     e2sar::Reassembler::ReassemblerFlags getReassemblerFlagsFromINI(
@@ -45,7 +47,6 @@ namespace frib_ejfat {
 	const e2sar::Segmenter::SegmenterFlags& flags);
     void printReassemblerFlags(
 	const e2sar::Reassembler::ReassemblerFlags& flags);
-    //ufmt::FormatSelector::SupportedVersions mapVersion(int fmtIn);
 }
     
 #endif
