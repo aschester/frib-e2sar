@@ -23,203 +23,188 @@
 
 #include <iostream>
 
-using namespace e2sar;
-// using namespace ufmt;
-
-/**
- * @brief Byte dump of buffer to stderr.
- * @param buf Pointer to the start of the data buffer we're dumping
- * @param nBytes Number of bytes to dump
- */
-void
-frib_ejfat::dumpBuffer(u_int8_t* buf, size_t nBytes) {
-    size_t printed = 0; // Total bytes printed (incl. padding)
-    size_t perLine = 8; // Bytes per line
+// This is not my preferred implementation due to the added level of nesting
+// but CMake defaults for Doxygen are able to resolve the namespace usage
+// in this case but not if the functions are e.g., frib_ejfat::dumpBuffer().
+// -ASC 3/12/25
+namespace frib_ejfat {
+    /**
+     * @brief Byte dump of buffer to stderr.
+     * @param buf Pointer to the start of the data buffer we're dumping
+     * @param nBytes Number of bytes to dump
+     */
+    void
+    dumpBuffer(u_int8_t* buf, size_t nBytes) {
+	size_t printed = 0; // Total bytes printed (incl. padding)
+	size_t perLine = 8; // Bytes per line
     
-    std::cerr << "-----------------------" << std::endl;
-    std::cerr << std::hex;
+	std::cerr << "-----------------------" << std::endl;
+	std::cerr << std::hex;
     
-    while (printed < nBytes) {
-        size_t bytesToPrint = std::min(nBytes - printed, perLine);
-        for (size_t i = 0; i < bytesToPrint; i++) {
-            std::cerr << std::setw(2) << std::setfill('0')
-		      << unsigned(*buf) << " ";
-            buf++;
-        }
+	while (printed < nBytes) {
+	    size_t bytesToPrint = std::min(nBytes - printed, perLine);
+	    for (size_t i = 0; i < bytesToPrint; i++) {
+		std::cerr << std::setw(2) << std::setfill('0')
+			  << unsigned(*buf) << " ";
+		buf++;
+	    }
 
-        for (size_t i = bytesToPrint; i < perLine; ++i) {
-            std::cerr << "   ";
-        }
+	    for (size_t i = bytesToPrint; i < perLine; ++i) {
+		std::cerr << "   ";
+	    }
 	
-        printed += perLine;
+	    printed += perLine;
+	}
+	std::cerr << std::dec << std::endl;
     }
-    std::cerr << std::dec << std::endl;
-}
 
-/**
- * @brief Read URI from EJFAT_URI or non-empty string if passed.
- * @param uri URI string; if empty, read from EJFAT_URI environment variable.
- * @param tt  Token type used to construct the URI
- * @param preferV6 Prefer IpV6 (optional, default=false)
- * @return The Ejfat URI
- * @note Failure to create a valid URI is fatal
- */
-EjfatURI
-frib_ejfat::getURI(const std::string uri, const EjfatURI::TokenType& tt,
-		   const bool preferV6=false)
-{
-    auto uri_rv = (
-	uri.empty() ?
-	EjfatURI::getFromEnv("EJFAT_URI"s, tt, preferV6) :
-	EjfatURI::getFromString(uri, tt, preferV6)
-	);	
-    if (uri_rv.has_error())
+    /**
+     * @brief Read URI from EJFAT_URI or non-empty string if passed.
+     * @param uri URI string; if empty, read from EJFAT_URI environment 
+     *   variable.
+     * @param tt  Token type used to construct the URI
+     * @param preferV6 Prefer IpV6 (optional, default=false)
+     * @return The Ejfat URI
+     * @note Failure to create a valid URI is fatal
+     */
+    e2sar::EjfatURI
+    getURI(const std::string uri, const e2sar::EjfatURI::TokenType& tt,
+	   const bool preferV6)
     {
-	std::cerr << "Error in parsing URI "s + uri_rv.error().message()
+	auto uri_rv = (
+	    uri.empty() ?
+	    e2sar::EjfatURI::getFromEnv("EJFAT_URI"s, tt, preferV6) :
+	    e2sar::EjfatURI::getFromString(uri, tt, preferV6)
+	    );	
+	if (uri_rv.has_error())
+	{
+	    std::cerr << "Error in parsing URI "s + uri_rv.error().message()
+		      << std::endl;
+	    exit(EXIT_FAILURE);
+	}
+    
+	return uri_rv.value();
+    }
+
+    /**
+     * @brief Read segmenter configuration from INI file.
+     * @param fname Name of the configuration file for the segmenter
+     * @return The segmenter flags read from the file
+     */
+    e2sar::Segmenter::SegmenterFlags
+    getSegmenterFlagsFromINI(std::string fname)
+    {
+	auto flags_rv = e2sar::Segmenter::SegmenterFlags::getFromINI(fname);
+	if (flags_rv.has_error()) {
+	    std::cerr << "Error reading configuration file: "s
+		+ flags_rv.error().message() << std::endl;
+	    exit(EXIT_FAILURE);
+	}
+
+	auto flags = flags_rv.value();
+    
+	// Print out some info about the flags:
+    
+	std::cout << "Control plane                "
+		  << (flags.useCP ? "ON" : "OFF") << std::endl;
+	std::cout << "Event rate reporting in Sync "
+		  << (flags.zeroRate ? "OFF" : "ON") << std::endl;
+	std::cout << "Using usecs as event numbers "
+		  << (flags.usecAsEventNum ? "ON" : "OFF") << std::endl;
+	std::cout << "Number of send sockets:      "
+		  << flags.numSendSockets << std::endl;
+	std::cout << (flags.useCP ?
+		      "*** Make sure the LB has been reserved and the URI "
+		      "reflects the reserved instance information."
+		      : "*** Make sure the URI reflects proper data "
+		      "address, other parts are ignored.") << std::endl;
+    
+	return flags;
+    }
+
+    /**
+     * @brief Read reassembler configuration from INI file.
+     * @param fname Name of the configuration file for the reassembler
+     * @return The reassembler flags read from the file
+     */
+    e2sar::Reassembler::ReassemblerFlags
+    getReassemblerFlagsFromINI(std::string fname)
+    {
+	auto flags_rv = e2sar::Reassembler::ReassemblerFlags::getFromINI(fname);
+	if (flags_rv.has_error()) {
+	    std::cerr << "Error reading configuration file: "s
+		+ flags_rv.error().message() << std::endl;
+	    exit(EXIT_FAILURE);
+	}
+
+	auto flags = flags_rv.value();
+
+	// Expect LB header to be included (mainly for testing when
+	// useCP == false, as normally LB strips it off in normal operation);
+	// value must be !useCP. Set here rather than in the ini file to
+	// ensure its correct:
+    
+	flags.withLBHeader = not flags.useCP;
+    
+	// Print out some info about the flags:
+
+	std::cout << "Control plane will be "
+		  << (flags.useCP ? "ON" : "OFF") << std::endl;
+	std::cout << (flags.useCP ?
+		      "*** Make sure the LB has been reserved and the URI "
+		      "reflects the reserved instance information."
+		      : "*** Make sure the URI reflects proper data "
+		      "address, other parts are ignored.") << std::endl;
+    
+	return flags;
+    }
+
+    /**
+     * @brief Print the segmenter flags to stdout.
+     * @param flags The flags
+     */
+    void
+    printSegmenterFlags(const e2sar::Segmenter::SegmenterFlags& flags)
+    {
+	std::cout << "Segmenter flags:\n";
+	std::cout << "\tdpV6\t\t" << flags.dpV6 << std::endl;
+	std::cout << "\tzeroCopy\t" << flags.zeroCopy << std::endl;
+	std::cout << "\tconnectedSocket\t" << flags.connectedSocket
 		  << std::endl;
-	exit(EXIT_FAILURE);
-    }
-    
-    return uri_rv.value();
-}
-
-/**
- * @brief Read segmenter configuration from INI file.
- * @param fname Name of the configuration file for the segmenter
- * @return The segmenter flags read from the file
- */
-Segmenter::SegmenterFlags
-frib_ejfat::getSegmenterFlagsFromINI(std::string fname)
-{
-    auto flags_rv = Segmenter::SegmenterFlags::getFromINI(fname);
-    if (flags_rv.has_error()) {
-	std::cerr << "Error reading configuration file: "s
-	    + flags_rv.error().message() << std::endl;
-	exit(EXIT_FAILURE);
+	std::cout << "\tuseCP\t\t" << flags.useCP << std::endl;
+	std::cout << "\tzeroRate\t" << flags.zeroRate << std::endl;
+	std::cout << "\tusecAsEventNum\t" << flags.usecAsEventNum << std::endl;
+	std::cout << "\tsyncPeriodMs\t" << flags.syncPeriodMs << std::endl;
+	std::cout << "\tsyncPeriods\t" << flags.syncPeriods << std::endl;
+	std::cout << "\tmtu\t\t" << flags.mtu << " (bytes)" << std::endl;
+	std::cout << "\tnumSendSockets\t" << flags.numSendSockets << std::endl;
+	std::cout << "\tsndSockBufSize\t" << flags.sndSocketBufSize
+		  << " (bytes)" << std::endl;
     }
 
-    auto flags = flags_rv.value();
-    
-    // Print out some info about the flags:
-    
-    std::cout << "Control plane                "
-	      << (flags.useCP ? "ON" : "OFF") << std::endl;
-    std::cout << "Event rate reporting in Sync "
-	      << (flags.zeroRate ? "OFF" : "ON") << std::endl;
-    std::cout << "Using usecs as event numbers "
-	      << (flags.usecAsEventNum ? "ON" : "OFF") << std::endl;
-    std::cout << "Number of send sockets:      "
-	      << flags.numSendSockets << std::endl;
-    std::cout << (flags.useCP ?
-		  "*** Make sure the LB has been reserved and the URI "
-		  "reflects the reserved instance information."
-		  : "*** Make sure the URI reflects proper data "
-		  "address, other parts are ignored.") << std::endl;
-    
-    return flags;
-}
-
-/**
- * @brief Read reassembler configuration from INI file.
- * @param fname Name of the configuration file for the reassembler
- * @return The reassembler flags read from the file
- */
-Reassembler::ReassemblerFlags
-frib_ejfat::getReassemblerFlagsFromINI(std::string fname)
-{
-    auto flags_rv = Reassembler::ReassemblerFlags::getFromINI(fname);
-    if (flags_rv.has_error()) {
-	std::cerr << "Error reading configuration file: "s
-	    + flags_rv.error().message() << std::endl;
-	exit(EXIT_FAILURE);
+    /**
+     * @brief Print the reassembler flags to stdout.
+     * @param flags The flags
+     */
+    void
+    printReassemblerFlags(const e2sar::Reassembler::ReassemblerFlags& flags)
+    {
+	std::cout << "Reassembler flags:\n";
+	std::cout <<"\tuseCP\t\t" << flags.useCP << std::endl;
+	std::cout <<"\tuseHostAddress\t" << flags.useHostAddress << std::endl;
+	std::cout <<"\tperiod_ms\t" << flags.period_ms << std::endl;
+	std::cout <<"\tvalidateCert\t" << flags.validateCert << std::endl;
+	std::cout <<"\tKi, Kp, Kd\t" << flags.Ki << ", " << flags.Kp
+		  << ", " << flags.Kd << std::endl;
+	std::cout <<"\tsetPoint\t" << flags.setPoint << std::endl;
+	std::cout <<"\tepoch_ms\t" << flags.epoch_ms << std::endl;
+	std::cout <<"\tportRange\t" << flags.portRange << std::endl;
+	std::cout <<"\twithLBHeader\t" << flags.withLBHeader << std::endl;
+	std::cout <<"\teventTimeout_ms\t" << flags.eventTimeout_ms << std::endl;
+	std::cout <<"\trcvSocketBufSize\t" << flags.rcvSocketBufSize
+		  << " (bytes)" << std::endl;
+	std::cout <<"\tweight\t\t" << flags.weight << std::endl;
+	std::cout <<"\tmin_factor\t" << flags.min_factor << std::endl;
+	std::cout <<"\tmax_factor\t" << flags.max_factor << std::endl;
     }
-
-    auto flags = flags_rv.value();
-
-    // Expect LB header to be included (mainly for testing when useCP == false, 
-    // as normally LB strips it off in normal operation); value must be !useCP.
-    // Set here rather than in the ini file to ensure its correct:
-    
-    flags.withLBHeader = not flags.useCP;
-    
-    // Print out some info about the flags:
-
-    std::cout << "Control plane will be "
-	      << (flags.useCP ? "ON" : "OFF") << std::endl;
-    std::cout << (flags.useCP ?
-		  "*** Make sure the LB has been reserved and the URI "
-		  "reflects the reserved instance information."
-		  : "*** Make sure the URI reflects proper data "
-		  "address, other parts are ignored.") << std::endl;
-    
-    return flags;
-}
-
-/**
- * @brief Print the segmenter flags to stdout.
- * @param flags The flags
- */
-void
-frib_ejfat::printSegmenterFlags(const Segmenter::SegmenterFlags& flags)
-{
-    std::cout << "Segmenter flags:\n";
-    std::cout << "\tdpV6\t\t" << flags.dpV6 << std::endl;
-    std::cout << "\tzeroCopy\t" << flags.zeroCopy << std::endl;
-    std::cout << "\tconnectedSocket\t" << flags.connectedSocket << std::endl;
-    std::cout << "\tuseCP\t\t" << flags.useCP << std::endl;
-    std::cout << "\tzeroRate\t" << flags.zeroRate << std::endl;
-    std::cout << "\tusecAsEventNum\t" << flags.usecAsEventNum << std::endl;
-    std::cout << "\tsyncPeriodMs\t" << flags.syncPeriodMs << std::endl;
-    std::cout << "\tsyncPeriods\t" << flags.syncPeriods << std::endl;
-    std::cout << "\tmtu\t\t" << flags.mtu << " (bytes)" << std::endl;
-    std::cout << "\tnumSendSockets\t" << flags.numSendSockets << std::endl;
-    std::cout << "\tsndSockBufSize\t" << flags.sndSocketBufSize << " (bytes)"
-	      << std::endl;
-}
-
-/**
- * @brief Print the reassembler flags to stdout.
- * @param flags The flags
- */
-void
-frib_ejfat::printReassemblerFlags(const Reassembler::ReassemblerFlags& flags)
-{
-    std::cout << "Reassembler flags:\n";
-    std::cout <<"\tuseCP\t\t" << flags.useCP << std::endl;
-    std::cout <<"\tuseHostAddress\t" << flags.useHostAddress << std::endl;
-    std::cout <<"\tperiod_ms\t" << flags.period_ms << std::endl;
-    std::cout <<"\tvalidateCert\t" << flags.validateCert << std::endl;
-    std::cout <<"\tKi, Kp, Kd\t" << flags.Ki << ", " << flags.Kp
-	      << ", " << flags.Kd << std::endl;
-    std::cout <<"\tsetPoint\t" << flags.setPoint << std::endl;
-    std::cout <<"\tepoch_ms\t" << flags.epoch_ms << std::endl;
-    std::cout <<"\tportRange\t" << flags.portRange << std::endl;
-    std::cout <<"\twithLBHeader\t" << flags.withLBHeader << std::endl;
-    std::cout <<"\teventTimeout_ms\t" << flags.eventTimeout_ms << std::endl;
-    std::cout <<"\trcvSocketBufSize\t" << flags.rcvSocketBufSize
-	      << " (bytes)" << std::endl;
-    std::cout <<"\tweight\t\t" << flags.weight << std::endl;
-    std::cout <<"\tmin_factor\t" << flags.min_factor << std::endl;
-    std::cout <<"\tmax_factor\t" << flags.max_factor << std::endl;
-}
-
-// /**
-//  * @brief Map the version we get from the command line to a factory version.
-//  * @param fmtIn Format the user requested.
-//  * @throw std::invalid_argument Bad format version.
-//  * @return Factory version ID (from the enum).
-//  */
-// FormatSelector::SupportedVersions
-// frib_ejfat::mapVersion(int fmtIn)
-// {
-//     switch (fmtIn) {
-//     case 12:
-// 	return FormatSelector::v12;
-//     case 11:
-// 	return FormatSelector::v11;
-//     case 10:
-// 	throw std::invalid_argument("NSCLDAQ 10 is not currently supported");
-//     default:
-// 	throw std::invalid_argument("Invalid DAQ format version specifier");
-//     }
-// }
+} // end namespace frib_ejfat

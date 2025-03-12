@@ -15,6 +15,11 @@
            East Lansing, MI 48824-1321
 */
 
+/**
+ * @file FileDataSink.h
+ * @brief As the name implies, a file sink for NSCLDAQ data.
+ */
+
 #ifndef FILEDATASINK_H
 #define FILEDATASINK_H
 
@@ -27,7 +32,8 @@
 #include <CErrnoException.h>
 
 /**
- * @brief A "file" data sink.
+ * @class FileDataSink
+ * @brief A file data sink.
  * @details
  * Owns and manages a general file object. The user should
  * prefer constructing from a filename rather than a file

@@ -27,6 +27,7 @@
 
 using namespace e2sar;
 
+/** @brief Print out E2SAR info, test compliation against E2SAR. */
 int main(int argc, char* argv[])
 {
     // E2SAR software version:

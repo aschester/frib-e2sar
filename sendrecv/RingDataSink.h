@@ -15,6 +15,11 @@
 	     East Lansing, MI 48824-1321
 */
 
+/**
+ * @file RingDataSink.h
+ * @brief Define a ringbuffer data sink for NSCLDAQ dataflow.
+ */
+
 #ifndef RINGDATASINK_H
 #define RINGDATASINK_H
 
@@ -23,6 +28,11 @@
 #include <string>
 
 class CRingBuffer;
+
+/**
+ * @class RingDataSink
+ * @brief Ringbuffer data sink for NSCLDAQ dataflows.
+ */
 
 class RingDataSink : public DataSink
 {

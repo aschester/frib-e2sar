@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 ##
-# @file run_combined.py
+# @file run_evb.py
 # @details Run EVB pipe and eventlog for FRIB-E2SAR workflows.
 #
 
