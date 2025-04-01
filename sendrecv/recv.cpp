@@ -63,7 +63,7 @@ u_int16_t reportThreadSleepMs{2000}; // 2 second maximum
 Reassembler* reasPtr{nullptr};
 uint32_t nBytesWritten = 0;
 uint32_t totalBytes = 0;
-const uint32_t MAX_BYTES = 1.9*1024*1024*1024; // ~2 GB
+const uint32_t MAX_BYTES = 2.0*1024*1024*1024; // ~2 GB
 
 /**
  * @brief Shutdown the receiver. Deregister workers. Stop threads.
@@ -511,7 +511,9 @@ main(int argc, char* argv[])
 	std::vector<boost::thread> threads;
 	for(size_t i = 0; i < deqThreads; i++)
 	{
-	    boost::thread syncT(recvEvents, reasPtr, std::ref(factory), version, outPath, runNumber, durationSec, debug);
+	    boost::thread syncT(recvEvents, reasPtr, std::ref(factory),
+				version, outPath, runNumber, durationSec,
+				debug);
 	    threads.push_back(std::move(syncT)); // Transfer, dont copy!
 	}
 

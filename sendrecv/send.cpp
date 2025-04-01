@@ -213,7 +213,8 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
     };
     if (interEventSleepUsec == 0) { // Max send rate 1 MHz
 	interEventSleepUsec = 1;
-    }			 
+    }
+    
 
     std::cout.imbue(std::locale(""));
     std::cout << "Sending bit rate is " << rateGbps << " Gbps" << std::endl;
@@ -273,7 +274,7 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 
 	std::unique_ptr<CRingItem> pItem(pSource->getItem());
 	
-	if (!pItem.get()) { // End of source.
+	if (!pItem) { // End of source.
 	    break;
 	}
 	
@@ -285,7 +286,6 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	uint32_t   evtBufSize = pItem->size();
 	
 	if (pItem->hasBodyHeader()) {
-	    evtNumber = pItem->getEventTimestamp();
 	    dataId = pItem->getSourceId();
 	}
 	
@@ -299,9 +299,11 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	    std::cout << "\titem type:  " << pItem->type() << std::endl;
 	    std::cout << pItem->toString() << std::endl;
 	}
-	    
+
 	rv = s.addToSendQueue(evtBuf, evtBufSize, evtNumber, dataId,
 			      entropy, &freeBuffer, evtBuf);
+	// u_int8_t* p = reinterpret_cast<u_int8_t*>(pItem->getItemPointer());
+	// rv = s.sendEvent(p, evtBufSize, evtNumber, dataId, entropy);
 	if (rv.has_error()) {
 	    std::cout << rv.error().message() << std::endl;
 	    continue;
