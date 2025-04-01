@@ -61,6 +61,9 @@ using namespace frib_ejfat;
 bool threadsRunning(true);
 u_int16_t reportThreadSleepMs{2000}; // 2 second maximum
 Reassembler* reasPtr{nullptr};
+uint32_t nBytesWritten = 0;
+uint32_t totalBytes = 0;
+const uint32_t MAX_BYTES = 1.9*1024*1024*1024; // ~2 GB
 
 /**
  * @brief Shutdown the receiver. Deregister workers. Stop threads.
@@ -124,9 +127,12 @@ getOpts(int ac, char* av[])
 	("port",
 	 po::value<u_int16_t>()->default_value(23457),
 	 "starting UDP port number on which receiver listens.")
-	("sink,S",
+	("output-path,o",
 	 po::value<std::string>()->required(),
-	 "URI of data sink (ringbuffer or file)")
+	 "Top-level directory where output is written")
+	("run-number,r",
+	 po::value<size_t>()->required(),
+	 "Run number")
 	("threads,t",
 	 po::value<size_t>()->default_value(1),
 	 "number of reassembler threads")
@@ -203,10 +209,47 @@ prepareToReceive(Reassembler* r)
     return EXIT_SUCCESS;
 }
 
+std::string
+makeSinkUri(std::string outPath, size_t runNumber, size_t currentSegment)
+{
+    std::string uri("file://");
+    uri += outPath;
+    char path[1024];
+    sprintf(path, "run-%04d-%02d.evt", runNumber, currentSegment);
+    uri += path;
+
+    return uri;
+}
+
+/**
+ * @brief Create and return dynamically created sink based on the URI proto.
+ * @param strUrl References the URI string for the sink (ringbuffer or file).
+ * @throw std::runtime_error If the URI protocol is not known.
+ * @return Pointer to the dynamically created sink.
+ * @todo (ASC 3/3/25): Exception if ringbuffer is not localhost.
+ * @todo (ASC 3/3/25): Catch and handle all the ways constructors can fail,
+ *   make sure this exception is handled in main.
+ */
+DataSink*
+makeDataSink(const std::string& strUrl)
+{
+    URL url(strUrl);
+    std::string protocol = url.getProto();
+    std::string path = url.getPath();
+    if (protocol == "tcp" || protocol == "ring") {
+	return new RingDataSink(path);
+    } else if (protocol == "file") {
+	return new FileDataSink(path);
+    } else {
+	std::string msg("unknown proto for sink ");
+	msg += protocol;
+	throw std::runtime_error(msg);
+    }
+}
+
 /**
  * @brief Receive and reassemble events.
  * @param r Pointer to our Reassembler instance.
- * @param pSink Pointer to the (for now always a file) data sink we write to.
  * @param factory Factory for creating formatted ring items.
  * @param version NSCLDAQ format version (for parsing v11 vs. v12 headers).
  * @param durationSec Listening duration; if 0, listen forever.
@@ -220,10 +263,14 @@ prepareToReceive(Reassembler* r)
  *   unpacking method based on the DAQ version provided by the user.
  */
 result<int>
-recvEvents(Reassembler* r,  DataSink* pSink, RingItemFactoryBase& factory,
-	   FormatSelector::SupportedVersions version, int durationSec,
-	   bool debug=false)
-{    
+recvEvents(Reassembler* r, RingItemFactoryBase& factory, FormatSelector::SupportedVersions version, std::string outPath, size_t runNumber, int durationSec, bool debug=false)
+{
+    // Create the initial data sink:
+
+    size_t currentSegment = 0;
+    std::string sinkUri = makeSinkUri(outPath, runNumber, currentSegment);
+    std::unique_ptr<DataSink> pSink(makeDataSink(sinkUri));
+    
     // Received event information and receiver config. We recycle the buffer
     // with blocking calls to receive data. The extent of good data for a
     // particular event is defined by evtBufSize.
@@ -316,6 +363,16 @@ recvEvents(Reassembler* r,  DataSink* pSink, RingItemFactoryBase& factory,
 	}
 
 	pSink->putItem(*pItem.get());
+
+	nBytesWritten += evtBufSize;
+
+	if (nBytesWritten > MAX_BYTES) {
+	    totalBytes += nBytesWritten;
+	    nBytesWritten = 0;
+	    currentSegment++;
+	    sinkUri = makeSinkUri(outPath, runNumber, currentSegment);
+	    pSink.reset(makeDataSink(sinkUri));
+	}
 	
 	delete evtBuf;
 	evtBuf = nullptr;
@@ -375,32 +432,6 @@ recvStatsThread(Reassembler* r)
 }
 
 /**
- * @brief Create and return dynamically created sink based on the URI proto.
- * @param strUrl References the URI string for the sink (ringbuffer or file).
- * @throw std::runtime_error If the URI protocol is not known.
- * @return Pointer to the dynamically created sink.
- * @todo (ASC 3/3/25): Exception if ringbuffer is not localhost.
- * @todo (ASC 3/3/25): Catch and handle all the ways constructors can fail,
- *   make sure this exception is handled in main.
- */
-DataSink*
-makeDataSink(const std::string& strUrl)
-{
-    URL url(strUrl);
-    std::string protocol = url.getProto();
-    std::string path = url.getPath();
-    if (protocol == "tcp" || protocol == "ring") {
-	return new RingDataSink(path);
-    } else if (protocol == "file") {
-	return new FileDataSink(path);
-    } else {
-	std::string msg("unknown proto for sink ");
-	msg += protocol;
-	throw std::runtime_error(msg);
-    }
-}
-
-/**
  * @brief Receive main. Create a data sink and Reassembler; listen for data and
  * write it to the sink.
  */
@@ -420,8 +451,16 @@ main(int argc, char* argv[])
 	auto version = mapVersion(daqVersion);
 	auto& factory = FormatSelector::selectFactory(version);
 
-	auto sinkUri = opts["sink"].as<std::string>();
-	std::unique_ptr<DataSink> pSink(makeDataSink(sinkUri));
+	// sink string as file base
+	// can we initialize here so that last sink is destroyed on exit?
+	// - append a segment number starting at 0
+	// - .evt extension
+	// - create sink
+
+	auto outPath = opts["output-path"].as<std::string>();
+	auto runNumber = opts["run-number"].as<size_t>();
+	//auto sinkUri = opts["sink"].as<std::string>();
+	//std::unique_ptr<DataSink> pSink(makeDataSink(sinkUri));
 	
 	/////////////////////////////////////////////////////////////////////
 	// Configure E2SAR
@@ -472,9 +511,7 @@ main(int argc, char* argv[])
 	std::vector<boost::thread> threads;
 	for(size_t i = 0; i < deqThreads; i++)
 	{
-	    boost::thread syncT(recvEvents, reasPtr, pSink.get(),
-				std::ref(factory), version, durationSec,
-				debug);
+	    boost::thread syncT(recvEvents, reasPtr, std::ref(factory), version, outPath, runNumber, durationSec, debug);
 	    threads.push_back(std::move(syncT)); // Transfer, dont copy!
 	}
 
