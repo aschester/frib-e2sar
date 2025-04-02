@@ -113,7 +113,8 @@ FileDataSink::~FileDataSink()
  *
  * @throw CErrnoException When io failure
  */
-void FileDataSink::putItem(const CRingItem& item)
+void
+FileDataSink::putItem(const CRingItem& item)
 {
     // Get the underlying structure containing the state 
     const RingItem* pItem = item.getItemPointer();
@@ -134,7 +135,8 @@ void FileDataSink::putItem(const CRingItem& item)
  *
  * @throw CErrnoException
  */
-void FileDataSink::put(const void* pData, size_t nBytes)
+void
+FileDataSink::put(const void* pData, size_t nBytes)
 {
     try {
 	fmtio::writeData(m_fd, pData, nBytes);
@@ -153,7 +155,8 @@ void FileDataSink::put(const void* pData, size_t nBytes)
  *
  * @throw CErrnoException if fcntl failed while checking
  */
-bool FileDataSink::isWritable() 
+bool
+FileDataSink::isWritable() 
 {
     // Get the status flags of the file
     int status = fcntl(m_fd, F_GETFL);
@@ -166,4 +169,25 @@ bool FileDataSink::isWritable()
 
     // Check if we can write
     return ( (status&O_WRONLY)!=0 || (status&O_RDWR)!=0 );
+}
+
+void
+FileDataSink::putItemsV(iovec* iovs, size_t iovcnt)
+{
+    putV(iovs, iovcnt);
+}
+
+void
+FileDataSink::putV(iovec* iovs, size_t iovcnt)
+{
+    try {
+	fmtio::writeDataVUnlimited(m_fd, iovs, iovcnt);
+    } catch (int err) {
+	errno = err; // CErrnoException captures the global errno.
+	std::string errmsg(
+	    "FileDataSink::putItemsV(iovec* iovs, size_t iovcnt) "
+	    ": writeDataV failed "
+	    ); 
+	throw CErrnoException(errmsg);
+    }
 }

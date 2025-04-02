@@ -65,6 +65,12 @@ public:
     virtual void putItem(const ufmt::CRingItem& item);
     virtual void put(const void* pData, size_t nBytes);
 
+    /*
+     * Vectored IO
+     */
+    virtual void putItemsV(iovec* iovs, size_t iovcnt);
+    virtual void putV(iovec* iovs, size_t iovcnt);
+
     /**! 
      * @brief Flush file to syncronize
      */

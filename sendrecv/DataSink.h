@@ -24,6 +24,7 @@
 
 #include <stdlib.h>
 
+struct iovec;
 namespace ufmt {
     class CRingItem;
 }
@@ -53,6 +54,9 @@ public:
      * @param nBytes Number of bytes to write
      */
     virtual void put(const void* pData, size_t nBytes) = 0;
+
+    virtual void putItemsV(iovec* iovs, size_t iovcnt) {};
+    virtual void putV(iovec* iovs, size_t iovcnt) {};
 
 };
 

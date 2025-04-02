@@ -287,14 +287,15 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory, FormatSelector::Support
 
     size_t currentBytes = 0;
     size_t totalBytes = 0;
+    iovec iovs[10000];
     
     while(threadsRunning)
     {	
 	// recvEvent is blocking receive. Use getEvent() for non-blocking:
 	
-	// auto rv = r->recvEvent(&evtBuf, &evtBufSize, &evtNum,
-	// 		       &dataId, waitMs);
-	auto rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
+	auto rv = r->recvEvent(&evtBuf, &evtBufSize, &evtNum,
+			       &dataId, waitMs);
+	// auto rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
 	
         auto next = boost::chrono::steady_clock::now();
 
@@ -325,6 +326,7 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory, FormatSelector::Support
 	u_int8_t* p = evtBuf; // Pointer to first byte
 	size_t bytesToRead = evtBufSize;
 	// if (debug) dumpBuffer(evtBuf, evtBufSize);
+	size_t evt = 0;
 	
 	while (bytesToRead > 0) {
 	    auto pHdr = reinterpret_cast<RingItemHeader*>(p);
@@ -342,9 +344,10 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory, FormatSelector::Support
 	    p += bodyHdrSize;
 	    bodySize -= bodyHdrSize; // Whatever is left is the payload.
 
-	    std::unique_ptr<CRingItem> pItem(
-		factory.makeRingItem(pHdr->s_type, bodySize)
-		);
+	    // std::unique_ptr<CRingItem> pItem(
+	    // 	factory.makeRingItem(pHdr->s_type, bodySize)
+	    // 	);
+	    CRingItem* pItem = factory.makeRingItem(pHdr->s_type, bodySize);
 	    if (bodyHdrSize > sizeof(uint32_t)) {
 		pItem->setBodyHeader(pBodyHdr->s_timestamp,
 				     pBodyHdr->s_sourceId,
@@ -355,12 +358,16 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory, FormatSelector::Support
 	    pBody += bodySize;	    
 	    pItem->setBodyCursor(pBody);
 	    pItem->updateSize();	    
-
-	    pSink->putItem(*pItem.get());
+	    
+	    iovs[evt].iov_base = pItem->getItemPointer();
+	    iovs[evt].iov_len = itemSize;
+	    evt++;	    
 	
 	    p += bodySize;           // Ready to read next item
 	    bytesToRead -= itemSize; // Remaining data to unpack
-	} // End buffer unpack 
+	} // End buffer unpack
+
+	pSink->putItemsV(iovs, evt);
 
 	currentBytes += evtBufSize;
 	
@@ -458,16 +465,8 @@ main(int argc, char* argv[])
 	auto version = mapVersion(daqVersion);
 	auto& factory = FormatSelector::selectFactory(version);
 
-	// sink string as file base
-	// can we initialize here so that last sink is destroyed on exit?
-	// - append a segment number starting at 0
-	// - .evt extension
-	// - create sink
-
 	auto outPath = opts["output-path"].as<std::string>();
 	auto runNumber = opts["run-number"].as<size_t>();
-	//auto sinkUri = opts["sink"].as<std::string>();
-	//std::unique_ptr<DataSink> pSink(makeDataSink(sinkUri));
 	
 	/////////////////////////////////////////////////////////////////////
 	// Configure E2SAR
