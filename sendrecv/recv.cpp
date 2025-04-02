@@ -320,9 +320,8 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory, FormatSelector::Support
 	// then do byte-by-byte copy of the buffer into the ring item body.
 	///
 
-	u_int8_t* p = evtBuf;         // Pointer to first byte of evtBuf.
-	size_t bodySize = evtBufSize; // In bytes.
-	
+	u_int8_t* p = evtBuf;         // Pointer to first byte of evtBuf.	
+	size_t bodySize = evtBufSize; // In bytes.	
 	auto pHdr = reinterpret_cast<RingItemHeader*>(p);
 	p += sizeof(RingItemHeader);
 	bodySize -= sizeof(RingItemHeader);

@@ -195,7 +195,7 @@ freeBuffer(boost::any a)
  * @param s References our Segmenter instance.
  * @param pSource Pointer to data source where we get ring items.
  * @param nEvents Number of events to send.
- * @param evtBufSize Size of each event buffer, must be big enough to hold a 
+ * @param maxBufSize Size of each event buffer, must be big enough to hold a 
  *   single ring item.
  * @param rateGbps Send rate in Gbps (optional, default=1.0)
  * @param debug Show debugging output (optional, default=false)
@@ -203,23 +203,22 @@ freeBuffer(boost::any a)
  */
 result<int>
 sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
-	   size_t evtBufSize, float rateGbps=1.0, bool debug=false)
+	   size_t maxBufSize, float rateGbps=1.0, bool debug=false)
 {
     // Convert bit rate to event rate. Sleep at least 1 us between sends:
     
-    float eventRate{rateGbps*1000000000/(evtBufSize*8)};
+    float eventRate{rateGbps*1000000000/(maxBufSize*8)};
     u_int64_t interEventSleepUsec{
-	static_cast<u_int64_t>(evtBufSize*8/(rateGbps*1000))
+	static_cast<u_int64_t>(maxBufSize*8/(rateGbps*1000))
     };
     if (interEventSleepUsec == 0) { // Max send rate 1 MHz
 	interEventSleepUsec = 1;
-    }
-    
+    }    
 
     std::cout.imbue(std::locale(""));
     std::cout << "Sending bit rate is " << rateGbps << " Gbps" << std::endl;
-    std::cout << "Event size is " << evtBufSize << " bytes or "
-	      << evtBufSize*8 << " bits" << std::endl;
+    std::cout << "Event size is " << maxBufSize << " bytes or "
+	      << maxBufSize*8 << " bits" << std::endl;
     std::cout << "Event rate is " << eventRate << " Hz" << std::endl;
     std::cout << "Inter-event sleep time is " << interEventSleepUsec
 	      << " microseconds" << std::endl;
@@ -239,7 +238,7 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 
     // Create our buffer pool:
 	
-    evtBufPool = new boost::pool<>{evtBufSize};
+    evtBufPool = new boost::pool<>{maxBufSize};
     
     // Sleep to allow small number of frames to leave:
     
@@ -272,9 +271,14 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	    evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
 	}
 
+	// @todo
+	// One assumption not satisfied by our data is that event data are
+	// "large". In many cases we have only ~few hundred bytes. Do we want
+	// to fill the event buffer as much as possible before sending?
+	
 	std::unique_ptr<CRingItem> pItem(pSource->getItem());
 	
-	if (!pItem) { // End of source.
+	if (!pItem.get()) { // End of source.
 	    break;
 	}
 	
@@ -282,8 +286,8 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	// and add it to the send queue. Event number is timestamp, data Id
 	// is the source Id. In the case no body header is present, the
 	// event timestamp is UINT64_MAX and the data Id is 0.
-
-	uint32_t   evtBufSize = pItem->size();
+	
+	uint32_t evtBufSize = pItem->size();
 	
 	if (pItem->hasBodyHeader()) {
 	    dataId = pItem->getSourceId();
@@ -302,8 +306,6 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 
 	rv = s.addToSendQueue(evtBuf, evtBufSize, evtNumber, dataId,
 			      entropy, &freeBuffer, evtBuf);
-	// u_int8_t* p = reinterpret_cast<u_int8_t*>(pItem->getItemPointer());
-	// rv = s.sendEvent(p, evtBufSize, evtNumber, dataId, entropy);
 	if (rv.has_error()) {
 	    std::cout << rv.error().message() << std::endl;
 	    continue;
@@ -317,7 +319,7 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 		"requested sending rate too high"};
 	}
 
-	// Free the backlog of unused buffers:
+        // Free the backlog of unused buffers:
 	
 	u_int8_t* item{nullptr};
 	while (evtBufQueue.pop(item)) {
