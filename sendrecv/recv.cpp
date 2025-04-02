@@ -61,8 +61,6 @@ using namespace frib_ejfat;
 bool threadsRunning(true);
 u_int16_t reportThreadSleepMs{2000}; // 2 second maximum
 Reassembler* reasPtr{nullptr};
-uint32_t nBytesWritten = 0;
-uint32_t totalBytes = 0;
 const uint32_t MAX_BYTES = 2.0*1024*1024*1024; // ~2 GB
 
 /**
@@ -286,14 +284,18 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory, FormatSelector::Support
     /////////////////////////////////////////////////////////////////////////
     // Receive loop
     ///
+
+    size_t currentBytes = 0;
+    size_t totalBytes = 0;
     
     while(threadsRunning)
     {	
-	// Blocking receive. Use getEvent() for non-blocking:
+	// recvEvent is blocking receive. Use getEvent() for non-blocking:
 	
 	// auto rv = r->recvEvent(&evtBuf, &evtBufSize, &evtNum,
 	// 		       &dataId, waitMs);
 	auto rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
+	
         auto next = boost::chrono::steady_clock::now();
 
 	// If duration is set stop listening after that time and exit.
@@ -309,66 +311,71 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory, FormatSelector::Support
 	
         if (rv.value() == -1) // Queue is empty
             continue;	
-	
+
 	/////////////////////////////////////////////////////////////////////
 	// Data post-processing:
 	//
-	// The event buffer is a complete ring item. All the information we
-	// need to re-form the ring item on this end can be parsed from the
-	// ring item's header and body header. We extract the body size based
+	// The event buffer contains complete ring items. All the information
+	// needed to re-form the ring items on this end can be parsed from the
+	// ring item headers and body headers. We extract the body size based
 	// on the remaining size after the header sizes are subtracted and
 	// then do byte-by-byte copy of the buffer into the ring item body.
 	///
 
-	u_int8_t* p = evtBuf;         // Pointer to first byte of evtBuf.
-	size_t bodySize = evtBufSize; // In bytes.
+	u_int8_t* p = evtBuf; // Pointer to first byte
+	size_t bytesToRead = evtBufSize;
+	// if (debug) dumpBuffer(evtBuf, evtBufSize);
 	
-	auto pHdr = reinterpret_cast<RingItemHeader*>(p);
-	p += sizeof(RingItemHeader);
-	bodySize -= sizeof(RingItemHeader);
+	while (bytesToRead > 0) {
+	    auto pHdr = reinterpret_cast<RingItemHeader*>(p);
+	    size_t itemSize = pHdr->s_size;
+	    size_t bodySize = itemSize; // Bytes in body
+	    p += sizeof(RingItemHeader);
+	    bodySize -= sizeof(RingItemHeader);
 
-	// Body headers exist starting with NSCLDAQ 11. Note that this section
-	// of code breaks compatibility with v10:
+	    auto pBodyHdr = reinterpret_cast<BodyHeader*>(p);
+	    size_t bodyHdrSize = pBodyHdr->s_size;
+	    // v11 body header size is not self-inclusive if not present:	
+	    if (bodyHdrSize == 0 && version == FormatSelector::v11) {
+		bodyHdrSize = sizeof(uint32_t); // Inclusive size
+	    }
+	    p += bodyHdrSize;
+	    bodySize -= bodyHdrSize; // Whatever is left is the payload.
+
+	    std::unique_ptr<CRingItem> pItem(
+		factory.makeRingItem(pHdr->s_type, bodySize)
+		);
+	    if (bodyHdrSize > sizeof(uint32_t)) {
+		pItem->setBodyHeader(pBodyHdr->s_timestamp,
+				     pBodyHdr->s_sourceId,
+				     pBodyHdr->s_barrier);
+	    }	
+	    auto pBody = reinterpret_cast<u_int8_t*>(pItem->getBodyCursor());
+	    memcpy(pBody, p, bodySize);
+	    pBody += bodySize;	    
+	    pItem->setBodyCursor(pBody);
+	    pItem->updateSize();	    
+
+	    pSink->putItem(*pItem.get());
 	
-	auto pBodyHdr = reinterpret_cast<BodyHeader*>(p);
-	size_t bodyHdrSize = pBodyHdr->s_size;
-	// v11 body header size is not self-inclusive if not present:	
-	if (bodyHdrSize == 0 && version == FormatSelector::v11) {
-	    bodyHdrSize = sizeof(uint32_t); // Inclusive size
-	}
-	p += bodyHdrSize;
-	bodySize -= bodyHdrSize; // Whatever is left is the payload.
+	    p += bodySize;           // Ready to read next item
+	    bytesToRead -= itemSize; // Remaining data to unpack
+	} // End buffer unpack 
 
-	std::unique_ptr<CRingItem> pItem(
-	    factory.makeRingItem(pHdr->s_type, bodySize)
-	    );
-	if (bodyHdrSize > sizeof(uint32_t)) {
-	    pItem->setBodyHeader(pBodyHdr->s_timestamp,
-				 pBodyHdr->s_sourceId,
-				 pBodyHdr->s_barrier);
-	}	
-	u_int8_t* pBody = reinterpret_cast<u_int8_t*>(pItem->getBodyCursor());
-	memcpy(pBody, p, bodySize);
-	pBody += bodySize;	    
-	pItem->setBodyCursor(pBody);
-	pItem->updateSize();
-		
+	currentBytes += evtBufSize;
+	
 	if (debug) {
 	    std::cout << "Receive event:" << std::endl;
 	    std::cout << "\tevtNumber:  " << evtNum << std::endl;
 	    std::cout << "\tdataId:     " << dataId << std::endl;
 	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
-	    std::cout << "\titem type:  " << pItem->type() << std::endl;
-	    std::cout << pItem->toString() << std::endl;
 	}
-
-	pSink->putItem(*pItem.get());
-
-	nBytesWritten += evtBufSize;
-
-	if (nBytesWritten > MAX_BYTES) {
-	    totalBytes += nBytesWritten;
-	    nBytesWritten = 0;
+		
+	if (currentBytes > MAX_BYTES) {
+	    // Track how much we've written:
+	    totalBytes += currentBytes;
+	    currentBytes = 0;
+	    // Segment output:
 	    currentSegment++;
 	    sinkUri = makeSinkUri(outPath, runNumber, currentSegment);
 	    pSink.reset(makeDataSink(sinkUri));
