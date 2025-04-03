@@ -90,6 +90,7 @@ shutdown() {
 
 /**
  * @brief Handle interrupt and shutdown.
+ * @param sig Interrupt signal.
  * @note Re-raises default interrupt signal after shutdown for cleanup,
  *   closing data sink, etc.
  */
@@ -163,6 +164,96 @@ getOpts(int ac, char* av[])
 }
 
 /**
+ * @brief Make a (file) sink URI from the path and run information.
+ * @param outPath Toplevel output directory.
+ * @param runNumber Current run number.
+ * @param currentSegment Current segment we're writing to.
+ * @return Full file sink name.
+ */
+std::string
+makeSinkUri(std::string outPath, size_t runNumber, size_t currentSegment)
+{
+    std::string uri("file://");
+    uri += outPath;
+    char path[1024];
+    sprintf(path, "run-%04d-%02d.evt", runNumber, currentSegment);
+    uri += path;
+
+    return uri;
+}
+
+/**
+ * @brief Create and return dynamically created sink based on the URI proto.
+ * @param strUrl References the URI string for the sink (ringbuffer or file).
+ * @throw std::runtime_error If the URI protocol is not known.
+ * @return Pointer to the dynamically created sink.
+ * @todo (ASC 3/3/25): Exception if ringbuffer is not localhost.
+ * @todo (ASC 3/3/25): Catch and handle all the ways constructors can fail,
+ *   make sure this exception is handled in main.
+ */
+DataSink*
+makeDataSink(const std::string& strUrl)
+{
+    URL url(strUrl);
+    std::string protocol = url.getProto();
+    std::string path = url.getPath();
+    if (protocol == "tcp" || protocol == "ring") {
+	return new RingDataSink(path);
+    } else if (protocol == "file") {
+	return new FileDataSink(path);
+    } else {
+	std::string msg("unknown proto for sink ");
+	msg += protocol;
+	throw std::runtime_error(msg);
+    }
+}
+
+/**
+ * @brief Return the size of the item.
+ * @param pData Pointer to a ring item.
+ * @return Number of bytes in that item.
+ */
+size_t
+itemSize(void* pData)
+{
+    return static_cast<RingItemHeader*>(pData)->s_size;
+}
+
+/**
+ * @breif Get pointer to beginning of next item.
+ * @param pData Pointer to data block.
+ * @return void* Pointer to the next item in the block.
+ */
+void*
+nextItem(void* pData)
+{
+    size_t n = itemSize(pData);
+    uint8_t* p = static_cast<uint8_t*>(pData);
+    p += n;
+    
+    return p;
+}
+
+/**
+ * @brief Count the number of items in a block of data.
+ * @param pData Pointer to the data.
+ * @param nBytes Number of bytes in the block.
+ * @return Number of items in the block.
+ */
+size_t
+countRingItems(void* pData, size_t nBytes)
+{
+    size_t result(0);
+    while (nBytes) {
+        result++;
+        nBytes -= itemSize(pData);
+        pData   = nextItem(pData);
+    }
+    
+    return result;
+}
+
+/**
  * @brief Register workers and start the receiver threads.
  * @param r Pointer to Reassembler instance.
  * @return EXIT_SUCCESS if successful, E2SAR error otherwise.
@@ -207,44 +298,6 @@ prepareToReceive(Reassembler* r)
     return EXIT_SUCCESS;
 }
 
-std::string
-makeSinkUri(std::string outPath, size_t runNumber, size_t currentSegment)
-{
-    std::string uri("file://");
-    uri += outPath;
-    char path[1024];
-    sprintf(path, "run-%04d-%02d.evt", runNumber, currentSegment);
-    uri += path;
-
-    return uri;
-}
-
-/**
- * @brief Create and return dynamically created sink based on the URI proto.
- * @param strUrl References the URI string for the sink (ringbuffer or file).
- * @throw std::runtime_error If the URI protocol is not known.
- * @return Pointer to the dynamically created sink.
- * @todo (ASC 3/3/25): Exception if ringbuffer is not localhost.
- * @todo (ASC 3/3/25): Catch and handle all the ways constructors can fail,
- *   make sure this exception is handled in main.
- */
-DataSink*
-makeDataSink(const std::string& strUrl)
-{
-    URL url(strUrl);
-    std::string protocol = url.getProto();
-    std::string path = url.getPath();
-    if (protocol == "tcp" || protocol == "ring") {
-	return new RingDataSink(path);
-    } else if (protocol == "file") {
-	return new FileDataSink(path);
-    } else {
-	std::string msg("unknown proto for sink ");
-	msg += protocol;
-	throw std::runtime_error(msg);
-    }
-}
-
 /**
  * @brief Receive and reassemble events.
  * @param r Pointer to our Reassembler instance.
@@ -261,9 +314,12 @@ makeDataSink(const std::string& strUrl)
  *   unpacking method based on the DAQ version provided by the user.
  */
 result<int>
-recvEvents(Reassembler* r, RingItemFactoryBase& factory, FormatSelector::SupportedVersions version, std::string outPath, size_t runNumber, int durationSec, bool debug=false)
+recvEvents(Reassembler* r, RingItemFactoryBase& factory,
+	   FormatSelector::SupportedVersions version,
+	   std::string outPath, size_t runNumber, int durationSec,
+	   bool debug=false)
 {
-    // Create the initial data sink:
+    // Create the initial data sink, which we really expect to be a file:
 
     size_t currentSegment = 0;
     std::string sinkUri = makeSinkUri(outPath, runNumber, currentSegment);
@@ -287,7 +343,6 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory, FormatSelector::Support
 
     size_t currentBytes = 0;
     size_t totalBytes = 0;
-    iovec iovs[10000];
     
     while(threadsRunning)
     {	
@@ -324,50 +379,17 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory, FormatSelector::Support
 	///
 
 	u_int8_t* p = evtBuf; // Pointer to first byte
-	size_t bytesToRead = evtBufSize;
-	// if (debug) dumpBuffer(evtBuf, evtBufSize);
-	size_t evt = 0;
+	size_t nItems = countRingItems(evtBuf, evtBufSize);
+	std::vector<iovec> iovs(nItems);
 	
-	while (bytesToRead > 0) {
-	    auto pHdr = reinterpret_cast<RingItemHeader*>(p);
-	    size_t itemSize = pHdr->s_size;
-	    size_t bodySize = itemSize; // Bytes in body
-	    p += sizeof(RingItemHeader);
-	    bodySize -= sizeof(RingItemHeader);
+	// Unpack buffer into iovecs:
+	for (size_t i = 0; i < nItems; i++) {
+	    iovs[i].iov_base = p;
+	    iovs[i].iov_len = itemSize(p);
+	    p = static_cast<u_int8_t*>(nextItem(p));
+	}
 
-	    auto pBodyHdr = reinterpret_cast<BodyHeader*>(p);
-	    size_t bodyHdrSize = pBodyHdr->s_size;
-	    // v11 body header size is not self-inclusive if not present:	
-	    if (bodyHdrSize == 0 && version == FormatSelector::v11) {
-		bodyHdrSize = sizeof(uint32_t); // Inclusive size
-	    }
-	    p += bodyHdrSize;
-	    bodySize -= bodyHdrSize; // Whatever is left is the payload.
-
-	    // std::unique_ptr<CRingItem> pItem(
-	    // 	factory.makeRingItem(pHdr->s_type, bodySize)
-	    // 	);
-	    CRingItem* pItem = factory.makeRingItem(pHdr->s_type, bodySize);
-	    if (bodyHdrSize > sizeof(uint32_t)) {
-		pItem->setBodyHeader(pBodyHdr->s_timestamp,
-				     pBodyHdr->s_sourceId,
-				     pBodyHdr->s_barrier);
-	    }	
-	    auto pBody = reinterpret_cast<u_int8_t*>(pItem->getBodyCursor());
-	    memcpy(pBody, p, bodySize);
-	    pBody += bodySize;	    
-	    pItem->setBodyCursor(pBody);
-	    pItem->updateSize();	    
-	    
-	    iovs[evt].iov_base = pItem->getItemPointer();
-	    iovs[evt].iov_len = itemSize;
-	    evt++;	    
-	
-	    p += bodySize;           // Ready to read next item
-	    bytesToRead -= itemSize; // Remaining data to unpack
-	} // End buffer unpack
-
-	pSink->putItemsV(iovs, evt);
+	pSink->putItemsV(iovs.data(), iovs.size());
 
 	currentBytes += evtBufSize;
 	

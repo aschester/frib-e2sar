@@ -174,6 +174,9 @@ FileDataSink::isWritable()
 void
 FileDataSink::putItemsV(iovec* iovs, size_t iovcnt)
 {
+    // Maybe we want to do somehting else here, otherwise we can call `put()`
+    // directly...
+    
     putV(iovs, iovcnt);
 }
 
@@ -182,7 +185,8 @@ FileDataSink::putV(iovec* iovs, size_t iovcnt)
 {
     try {
 	fmtio::writeDataVUnlimited(m_fd, iovs, iovcnt);
-    } catch (int err) {
+    }
+    catch (int err) {
 	errno = err; // CErrnoException captures the global errno.
 	std::string errmsg(
 	    "FileDataSink::putItemsV(iovec* iovs, size_t iovcnt) "
