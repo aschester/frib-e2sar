@@ -383,6 +383,7 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory,
 	std::vector<iovec> iovs(nItems);
 	
 	// Unpack buffer into iovecs:
+	
 	for (size_t i = 0; i < nItems; i++) {
 	    iovs[i].iov_base = p;
 	    iovs[i].iov_len = itemSize(p);

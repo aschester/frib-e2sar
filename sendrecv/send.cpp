@@ -286,7 +286,6 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	    }	    
 	    uint32_t itemSize = pItem->size();	    
 	    memcpy(p, pItem->getItemPointer(), itemSize);
-	    // if (debug) dumpBuffer(evtBuf, itemSize);	    
 	    currentBytes += itemSize;
 	    p += itemSize; // Prepare to copy next item
 	} // End // buffer packing
@@ -336,7 +335,7 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	    // Wait to send next event:
     
 	    boost::this_thread::sleep_until(until);
-	}	
+	} // End EOF check	
     } // End of send loop
 
     // Done sending events, report:
