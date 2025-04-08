@@ -266,7 +266,7 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
     u_int16_t  entropy   = 0; // Default.
     bool eof = false;
     
-    while (!eof) {
+    while (1) {
 	
 	auto now = boost::chrono::high_resolution_clock::now();
 	
@@ -278,7 +278,7 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 
 	u_int8_t* p = evtBuf;    // Pointer to first byte
 	size_t currentBytes = 0; // Bytes in send buffer
-	while (currentBytes < maxBytes) {
+	while (!eof && currentBytes < maxBytes) {
 	    std::unique_ptr<CRingItem> pItem(pSource->getItem());	
 	    if (!pItem.get()) {
 		eof = true;  // End of source
@@ -290,52 +290,49 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	    p += itemSize; // Prepare to copy next item
 	} // End // buffer packing
 
-	if (!eof) {
-	    if (debug) {
-		std::cout << "Sending event:" << std::endl;
-		std::cout << "\tevtNumber:  " << evtNumber << std::endl;
-		std::cout << "\tdataId:     " << dataId << std::endl;
-		std::cout << "\tevtBufSize: " << currentBytes << std::endl;
-		std::cout << "\tevtBufFill: " << maxBytes << std::endl;
-		std::cout << "\tevtBufMax:  " << maxBufSize << std::endl;
-	    }
+	if (debug) {
+	    std::cout << "Sending event:" << std::endl;
+	    std::cout << "\tevtNumber:  " << evtNumber << std::endl;
+	    std::cout << "\tdataId:     " << dataId << std::endl;
+	    std::cout << "\tevtBufSize: " << currentBytes << std::endl;
+	    std::cout << "\tevtBufFill: " << maxBytes << std::endl;
+	    std::cout << "\tevtBufMax:  " << maxBufSize << std::endl;
+	}
 	
-	    rv = s.addToSendQueue(evtBuf, currentBytes, evtNumber, dataId,
-				  entropy, &freeBuffer, evtBuf);
-	    if (rv.has_error()) {
-		std::cout << rv.error().message() << std::endl;
-		continue;
-	    }
+	rv = s.addToSendQueue(evtBuf, currentBytes, evtNumber, dataId,
+			      entropy, &freeBuffer, evtBuf);
+	if (rv.has_error()) {
+	    std::cout << rv.error().message() << std::endl;
+	    continue;
+	}
 	
-	    auto until = now + boost::chrono::microseconds(interEventSleepUsec);
-	    if (now > until)
-	    {
-		return E2SARErrorInfo{E2SARErrorc::LogicError, 
-		    "Clock overrun, either event buffer length too short or "
-		    "requested sending rate too high"};
-	    }
+	auto until = now + boost::chrono::microseconds(interEventSleepUsec);
+	if (now > until)
+	{
+	    return E2SARErrorInfo{E2SARErrorc::LogicError, 
+		"Clock overrun, either event buffer length too short or "
+		"requested sending rate too high"};
+	}
 
-	    // Free the backlog of unused buffers:
+	// Free the backlog of unused buffers:
 	
-	    u_int8_t* item{nullptr};
-	    while (evtBufQueue.pop(item)) {
-		evtBufPool->free(item);
-	    }
+	u_int8_t* item{nullptr};
+	while (evtBufQueue.pop(item)) {
+	    evtBufPool->free(item);
+	}
 
-	    // Done with this iteration:
+	// Done with this iteration:
 	
-	    evtNumber++;
+	evtNumber++;
 
-	    // Check if we've hit a limit:
-	
-	    if (nEvents != 0 && evtNumber == nEvents) {
-		break;
-	    }
+	// Check if we've hit a limit or EOF:
 
-	    // Wait to send next event:
+	if (nEvents != 0 && evtNumber == nEvents) { break; }
+	if (eof) { break; }
+
+	// Wait to send next event:
     
-	    boost::this_thread::sleep_until(until);
-	} // End EOF check	
+	boost::this_thread::sleep_until(until);
     } // End of send loop
 
     // Done sending events, report:
@@ -540,9 +537,7 @@ main(int argc, char* argv[])
 	return EXIT_FAILURE;
     }
 
-    while(true) {
-	// wait
-    }
+    // while(true) { /* Wait indefinitely */ }
     
     shutdown();
     

@@ -147,6 +147,7 @@ getOpts(int ac, char* av[])
 	("nscldaq-version,v",
 	 po::value<int>()->default_value(12),
 	 "NSCLDAQ data format major version number")
+	("blocking", "enable blocking receive")
 	("debug", "enable debugging output")
 	;
     po::variables_map vm; // Command line options stored here.
@@ -304,7 +305,8 @@ prepareToReceive(Reassembler* r)
  * @param factory Factory for creating formatted ring items.
  * @param version NSCLDAQ format version (for parsing v11 vs. v12 headers).
  * @param durationSec Listening duration; if 0, listen forever.
- * @param debug Enable debugging output.
+ * @param blocking Run in blocking receive mode (default=false).
+ * @param debug Enable debugging output (default=false).
  * @return EXIT_SUCCESS if successful, E2SAR error otherwise.
  * @note (ASC 11/26/24): Not compatible with NSCLDAQ 10 at the moment. 
  *   The data unpacking from an arbitrary buffer containing a complete ring 
@@ -317,7 +319,7 @@ result<int>
 recvEvents(Reassembler* r, RingItemFactoryBase& factory,
 	   FormatSelector::SupportedVersions version,
 	   std::string outPath, size_t runNumber, int durationSec,
-	   bool debug=false)
+	   bool blocking=false, bool debug=false)
 {
     // Create the initial data sink, which we really expect to be a file:
 
@@ -345,22 +347,24 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory,
     size_t totalBytes = 0;
     
     while(threadsRunning)
-    {	
-	// recvEvent is blocking receive. Use getEvent() for non-blocking:
-	
-	// auto rv = r->recvEvent(&evtBuf, &evtBufSize, &evtNum,
-	// 		       &dataId, waitMs);
-	auto rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
-	
-        auto next = boost::chrono::steady_clock::now();
-
-	// If duration is set stop listening after that time and exit.
+    {
+	// If duration is set, stop listening after that time and exit.
 	// Note that we handle shutdown in main after the read thread(s)
 	// have exited.
 	
+	auto next = boost::chrono::steady_clock::now();	
         if ((durationSec != 0)
 	    && ((next - now) > boost::chrono::seconds(durationSec)))
             break;
+
+	// If not timed out, get data:
+	
+	result<int> rv = -1;
+	if (blocking) {
+	    rv = r->recvEvent(&evtBuf, &evtBufSize, &evtNum, &dataId, waitMs);
+	} else {
+	    rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
+	}
 	
         if (rv.has_error())
             return rv;
@@ -378,12 +382,12 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory,
 	// then do byte-by-byte copy of the buffer into the ring item body.
 	///
 
-	u_int8_t* p = evtBuf; // Pointer to first byte
 	size_t nItems = countRingItems(evtBuf, evtBufSize);
 	std::vector<iovec> iovs(nItems);
 	
 	// Unpack buffer into iovecs:
 	
+	u_int8_t* p = evtBuf; // Pointer to first byte
 	for (size_t i = 0; i < nItems; i++) {
 	    iovs[i].iov_base = p;
 	    iovs[i].iov_len = itemSize(p);
@@ -504,6 +508,7 @@ main(int argc, char* argv[])
 	auto numThreads = opts["threads"].as<size_t>(); // Reassembler
 	auto deqThreads = opts["deq"].as<size_t>();     // Dequeue/read
 	auto configFile(opts["config-file"].as<std::string>());
+	bool blocking = opts.count("blocking");
 	bool debug = opts.count("debug");
 
 	std::string ejfatUri_s("");
@@ -542,14 +547,13 @@ main(int argc, char* argv[])
 	{
 	    boost::thread syncT(recvEvents, reasPtr, std::ref(factory),
 				version, outPath, runNumber, durationSec,
-				debug);
+				blocking, debug);
 	    threads.push_back(std::move(syncT)); // Transfer, dont copy!
 	}
 
 	for (auto& t : threads) { // Must be a reference.
 	    t.join();
 	}
-	
     }
     catch (E2SARException &e) {
 	auto msg = static_cast<std::string>(e);
