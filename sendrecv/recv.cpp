@@ -348,9 +348,9 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory,
     {	
 	// recvEvent is blocking receive. Use getEvent() for non-blocking:
 	
-	auto rv = r->recvEvent(&evtBuf, &evtBufSize, &evtNum,
-			       &dataId, waitMs);
-	// auto rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
+	// auto rv = r->recvEvent(&evtBuf, &evtBufSize, &evtNum,
+	// 		       &dataId, waitMs);
+	auto rv = r->getEvent(&evtBuf, &evtBufSize, &evtNum, &dataId);
 	
         auto next = boost::chrono::steady_clock::now();
 
@@ -456,12 +456,12 @@ recvStatsThread(Reassembler* r)
 		      << stats.get<5>() << std::endl;
 	}
 
-        std::cout << "\tEvents lost so far: ";
-        for(auto evt: lostEvents)
-        {
-            std::cout << "<" << evt.first << ":" << evt.second << "> ";
-        }
-        std::cout << std::endl;
+        // std::cout << "\tEvents lost so far: ";
+        // for(auto evt: lostEvents)
+        // {
+        //     std::cout << "<" << evt.first << ":" << evt.second << "> ";
+        // }
+        // std::cout << std::endl;
 
         auto until = now + boost::chrono::milliseconds(reportThreadSleepMs);
         boost::this_thread::sleep_until(until);

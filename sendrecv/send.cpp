@@ -539,6 +539,10 @@ main(int argc, char* argv[])
 	shutdown();
 	return EXIT_FAILURE;
     }
+
+    while(true) {
+	// wait
+    }
     
     shutdown();
     
