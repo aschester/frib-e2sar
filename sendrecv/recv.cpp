@@ -148,6 +148,7 @@ getOpts(int ac, char* av[])
 	 po::value<int>()->default_value(12),
 	 "NSCLDAQ data format major version number")
 	("blocking", "enable blocking receive")
+	("use-iovec", "vectorized I/O using iovecs")
 	("debug", "enable debugging output")
 	;
     po::variables_map vm; // Command line options stored here.
@@ -300,12 +301,87 @@ prepareToReceive(Reassembler* r)
 }
 
 /**
+ * @brief Write ring items to a data sink using vectorized IO. 
+ * Probably a file (as of 9 Apr 2025).
+ * @param pData Pointer to beginning of data buffer containing items.
+ * @param nBytes Number of bytes of data in buffer.
+ * @param pSink Pointer to data sink we're writing to.
+ */
+void
+writeIOVec(void* pData, size_t nBytes, DataSink* pSink)
+{
+    auto p = static_cast<u_int8_t*>(pData);
+    size_t nItems = countRingItems(p, nBytes);
+    std::vector<iovec> iovs(nItems);
+    
+    for (size_t i = 0; i < nItems; i++) {
+	iovs[i].iov_base = p;
+	iovs[i].iov_len = itemSize(p);
+	p = static_cast<u_int8_t*>(nextItem(p));
+    }
+    
+    pSink->putItemsV(iovs.data(), iovs.size());
+}
+
+/**
+ * @brief Write ring items to a data sink. Probably a file (as of 9 Apr 2025).
+ * @param pData Pointer to beginning of data buffer containing items.
+ * @param nBytes Number of bytes of data in buffer.
+ * @param pSink Pointer to data sink we're writing to.
+ * @param factory Factory for creating formatted ring items.
+ * @param version NSCLDAQ format version (for parsing v11 vs. v12 headers).
+ */
+void
+writeRingItems(void* pData, size_t nBytes, DataSink* pSink,
+	       RingItemFactoryBase& factory,
+	       FormatSelector::SupportedVersions version)
+{
+    auto p = static_cast<u_int8_t*>(pData);
+    size_t bytesToRead = nBytes;
+    while (bytesToRead > 0) {
+	auto pHdr = reinterpret_cast<RingItemHeader*>(p);
+	size_t itemSize = pHdr->s_size;
+	size_t bodySize = itemSize; // Bytes in body
+	p += sizeof(RingItemHeader);
+	bodySize -= sizeof(RingItemHeader);
+	
+	auto pBodyHdr = reinterpret_cast<BodyHeader*>(p);
+	size_t bodyHdrSize = pBodyHdr->s_size;
+	// v11 body header size is not self-inclusive if not present:	
+	if (bodyHdrSize == 0 && version == FormatSelector::v11) {
+	    bodyHdrSize = sizeof(uint32_t); // Inclusive size
+	}
+	p += bodyHdrSize;
+	bodySize -= bodyHdrSize; // Whatever is left is the payload.
+
+	std::unique_ptr<CRingItem> pItem(
+	    factory.makeRingItem(pHdr->s_type, bodySize)
+	    );
+	if (bodyHdrSize > sizeof(uint32_t)) {
+	    pItem->setBodyHeader(pBodyHdr->s_timestamp, pBodyHdr->s_sourceId,
+				 pBodyHdr->s_barrier);
+	}	
+	auto pBody = reinterpret_cast<u_int8_t*>(pItem->getBodyCursor());
+	memcpy(pBody, p, bodySize);
+	pBody += bodySize;	    
+	pItem->setBodyCursor(pBody);
+	pItem->updateSize();
+	
+	pSink->putItem(*pItem.get());
+	
+	p += bodySize;       // Ready to read next item
+	bytesToRead -= itemSize; // Remaining data to unpack
+    }
+}
+
+/**
  * @brief Receive and reassemble events.
  * @param r Pointer to our Reassembler instance.
  * @param factory Factory for creating formatted ring items.
  * @param version NSCLDAQ format version (for parsing v11 vs. v12 headers).
  * @param durationSec Listening duration; if 0, listen forever.
  * @param blocking Run in blocking receive mode (default=false).
+ * @param useIov Use vectorized I/O (default=false).
  * @param debug Enable debugging output (default=false).
  * @return EXIT_SUCCESS if successful, E2SAR error otherwise.
  * @note (ASC 11/26/24): Not compatible with NSCLDAQ 10 at the moment. 
@@ -319,7 +395,7 @@ result<int>
 recvEvents(Reassembler* r, RingItemFactoryBase& factory,
 	   FormatSelector::SupportedVersions version,
 	   std::string outPath, size_t runNumber, int durationSec,
-	   bool blocking=false, bool debug=false)
+	   bool blocking=false, bool useIov=false, bool debug=false)
 {
     // Create the initial data sink, which we really expect to be a file:
 
@@ -377,42 +453,32 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory,
 	//
 	// The event buffer contains complete ring items. All the information
 	// needed to re-form the ring items on this end can be parsed from the
-	// ring item headers and body headers. We extract the body size based
-	// on the remaining size after the header sizes are subtracted and
-	// then do byte-by-byte copy of the buffer into the ring item body.
+	// ring item headers and body headers.
 	///
 
-	size_t nItems = countRingItems(evtBuf, evtBufSize);
-	std::vector<iovec> iovs(nItems);
-	
-	// Unpack buffer into iovecs:
-	
-	u_int8_t* p = evtBuf; // Pointer to first byte
-	for (size_t i = 0; i < nItems; i++) {
-	    iovs[i].iov_base = p;
-	    iovs[i].iov_len = itemSize(p);
-	    p = static_cast<u_int8_t*>(nextItem(p));
+	if (useIov) {
+	    writeIOVec(evtBuf, evtBufSize, pSink.get());
+	} else {
+	    writeRingItems(evtBuf, evtBufSize, pSink.get(), factory, version);
 	}
 
-	pSink->putItemsV(iovs.data(), iovs.size());
-
 	currentBytes += evtBufSize;
+	totalBytes += evtBufSize;
 	
 	if (debug) {
-	    std::cout << "Receive event:" << std::endl;
-	    std::cout << "\tevtNumber:  " << evtNum << std::endl;
-	    std::cout << "\tdataId:     " << dataId << std::endl;
-	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
+	    std::cout << "Receive event:  " << std::endl;
+	    std::cout << "\tevtNumber:    " << evtNum << std::endl;
+	    std::cout << "\tdataId:       " << dataId << std::endl;
+	    std::cout << "\tevtBufSize:   " << evtBufSize << std::endl;
+	    std::cout << "\tcurrentBytes: " << currentBytes << std::endl;
+	    std::cout << "\ttotalBytes:   " << totalBytes << std::endl;
 	}
 		
 	if (currentBytes > MAX_BYTES) {
-	    // Track how much we've written:
-	    totalBytes += currentBytes;
-	    currentBytes = 0;
-	    // Segment output:
 	    currentSegment++;
 	    sinkUri = makeSinkUri(outPath, runNumber, currentSegment);
 	    pSink.reset(makeDataSink(sinkUri));
+	    currentBytes = 0; // New segment.
 	}
 	
 	delete evtBuf;
@@ -509,8 +575,9 @@ main(int argc, char* argv[])
 	auto deqThreads = opts["deq"].as<size_t>();     // Dequeue/read
 	auto configFile(opts["config-file"].as<std::string>());
 	bool blocking = opts.count("blocking");
+	bool useIov = opts.count("use-iovec");
 	bool debug = opts.count("debug");
-
+	
 	std::string ejfatUri_s("");
 	if (opts.count("uri")) {
 	    ejfatUri_s = opts["uri"].as<std::string>();
@@ -547,7 +614,7 @@ main(int argc, char* argv[])
 	{
 	    boost::thread syncT(recvEvents, reasPtr, std::ref(factory),
 				version, outPath, runNumber, durationSec,
-				blocking, debug);
+				blocking, useIov, debug);
 	    threads.push_back(std::move(syncT)); // Transfer, dont copy!
 	}
 

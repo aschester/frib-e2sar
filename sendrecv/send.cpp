@@ -266,8 +266,7 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
     u_int16_t  entropy   = 0; // Default.
     bool eof = false;
     
-    while (1) {
-	
+    while (!eof) {	
 	auto now = boost::chrono::high_resolution_clock::now();
 	
 	if (!evtBufQueue.pop(evtBuf)) {
@@ -278,16 +277,18 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 
 	u_int8_t* p = evtBuf;    // Pointer to first byte
 	size_t currentBytes = 0; // Bytes in send buffer
-	while (!eof && currentBytes < maxBytes) {
+	size_t bytesFree = maxBufSize;
+	while (currentBytes < maxBytes) {
 	    std::unique_ptr<CRingItem> pItem(pSource->getItem());	
 	    if (!pItem.get()) {
 		eof = true;  // End of source
 		break;
-	    }	    
-	    uint32_t itemSize = pItem->size();	    
+	    }
+	    uint32_t itemSize = pItem->size();
 	    memcpy(p, pItem->getItemPointer(), itemSize);
 	    currentBytes += itemSize;
 	    p += itemSize; // Prepare to copy next item
+	    bytesFree -= itemSize;
 	} // End // buffer packing
 
 	if (debug) {
@@ -328,7 +329,6 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	// Check if we've hit a limit or EOF:
 
 	if (nEvents != 0 && evtNumber == nEvents) { break; }
-	if (eof) { break; }
 
 	// Wait to send next event:
     
