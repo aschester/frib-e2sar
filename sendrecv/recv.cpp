@@ -369,7 +369,7 @@ writeRingItems(void* pData, size_t nBytes, DataSink* pSink,
 	
 	pSink->putItem(*pItem.get());
 	
-	p += bodySize;       // Ready to read next item
+	p += bodySize;           // Ready to read next item
 	bytesToRead -= itemSize; // Remaining data to unpack
     }
 }
@@ -456,10 +456,13 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory,
 	// ring item headers and body headers.
 	///
 
+	/** @todo (ASC 4/16/25): --no-write option as we just add more and 
+	 * more damn flags and parameters. */
+	
 	if (useIov) {
-	    writeIOVec(evtBuf, evtBufSize, pSink.get());
+	    //writeIOVec(evtBuf, evtBufSize, pSink.get());
 	} else {
-	    writeRingItems(evtBuf, evtBufSize, pSink.get(), factory, version);
+	    //writeRingItems(evtBuf, evtBufSize, pSink.get(), factory, version);
 	}
 
 	currentBytes += evtBufSize;
@@ -476,8 +479,8 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory,
 		
 	if (currentBytes > MAX_BYTES) {
 	    currentSegment++;
-	    sinkUri = makeSinkUri(outPath, runNumber, currentSegment);
-	    pSink.reset(makeDataSink(sinkUri));
+	    //sinkUri = makeSinkUri(outPath, runNumber, currentSegment);
+	    //pSink.reset(makeDataSink(sinkUri));
 	    currentBytes = 0; // New segment.
 	}
 	

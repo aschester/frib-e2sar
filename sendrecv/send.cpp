@@ -277,7 +277,7 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 
 	u_int8_t* p = evtBuf;    // Pointer to first byte
 	size_t currentBytes = 0; // Bytes in send buffer
-	size_t bytesFree = maxBufSize;
+
 	while (currentBytes < maxBytes) {
 	    std::unique_ptr<CRingItem> pItem(pSource->getItem());	
 	    if (!pItem.get()) {
@@ -288,7 +288,6 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	    memcpy(p, pItem->getItemPointer(), itemSize);
 	    currentBytes += itemSize;
 	    p += itemSize; // Prepare to copy next item
-	    bytesFree -= itemSize;
 	} // End // buffer packing
 
 	if (debug) {
