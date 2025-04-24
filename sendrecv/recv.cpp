@@ -62,6 +62,12 @@ bool threadsRunning(true);
 u_int16_t reportThreadSleepMs{2000}; // 2 second maximum
 Reassembler* reasPtr{nullptr};
 
+// Per-thread output limits args to thread function, so these are global:
+
+bool blocking = false;
+bool useIov = false;
+bool debug = false;
+
 /**
  * @brief Shutdown the receiver. Deregister workers. Stop threads.
  */
@@ -171,12 +177,12 @@ getOpts(int ac, char* av[])
  * @return Full file sink name.
  */
 std::string
-makeSinkUri(std::string outPath, size_t runNumber)
+makeSinkUri(std::string outPath, size_t runNumber, size_t th)
 {
     std::string uri("file://");
     uri += outPath;
     char path[1024];
-    sprintf(path, "run-%04d-out.evt", runNumber);
+    sprintf(path, "run-%04d-t%02d.evt", runNumber, th);
     uri += path;
 
     return uri;
@@ -393,11 +399,11 @@ result<int>
 recvEvents(Reassembler* r, RingItemFactoryBase& factory,
 	   FormatSelector::SupportedVersions version,
 	   std::string outPath, size_t runNumber, int durationSec,
-	   bool blocking=false, bool useIov=false, bool debug=false)
+	   size_t th)
 {
     // Create the initial data sink, which we really expect to be a file:
 
-    std::string sinkUri = makeSinkUri(outPath, runNumber);
+    std::string sinkUri = makeSinkUri(outPath, runNumber, th);
     std::unique_ptr<DataSink> pSink(makeDataSink(sinkUri));
     
     // Received event information and receiver config. We recycle the buffer
@@ -568,9 +574,9 @@ main(int argc, char* argv[])
 	auto numThreads = opts["threads"].as<size_t>(); // Reassembler
 	auto deqThreads = opts["deq"].as<size_t>();     // Dequeue/read
 	auto configFile(opts["config-file"].as<std::string>());
-	bool blocking = opts.count("blocking");
-	bool useIov = opts.count("use-iovec");
-	bool debug = opts.count("debug");
+	blocking = opts.count("blocking");
+	useIov = opts.count("use-iovec");
+	debug = opts.count("debug");
 	
 	std::string ejfatUri_s("");
 	if (opts.count("uri")) {
@@ -608,7 +614,7 @@ main(int argc, char* argv[])
 	{
 	    boost::thread syncT(recvEvents, reasPtr, std::ref(factory),
 				version, outPath, runNumber, durationSec,
-				blocking, useIov, debug);
+				i);
 	    threads.push_back(std::move(syncT)); // Transfer, dont copy!
 	}
 
