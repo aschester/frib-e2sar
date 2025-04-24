@@ -81,7 +81,7 @@ add_subdirectory(evtbuild)
 add_subdirectory(docs)
 
 # Install ini and script directories as-is:
-install(DIRECTORY ini DESTINATION ini
+install(DIRECTORY ini/ DESTINATION ini
   PATTERN "*~" EXCLUDE
   PATTERN "#*" EXCLUDE)
 install(DIRECTORY scripts/ DESTINATION scripts FILE_PERMISSIONS
