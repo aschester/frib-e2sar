@@ -460,9 +460,9 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory,
 	 * more damn flags and parameters. */
 	
 	if (useIov) {
-	    //writeIOVec(evtBuf, evtBufSize, pSink.get());
+	    writeIOVec(evtBuf, evtBufSize, pSink.get());
 	} else {
-	    //writeRingItems(evtBuf, evtBufSize, pSink.get(), factory, version);
+	    writeRingItems(evtBuf, evtBufSize, pSink.get(), factory, version);
 	}
 
 	currentBytes += evtBufSize;
@@ -479,8 +479,8 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory,
 		
 	if (currentBytes > MAX_BYTES) {
 	    currentSegment++;
-	    //sinkUri = makeSinkUri(outPath, runNumber, currentSegment);
-	    //pSink.reset(makeDataSink(sinkUri));
+	    sinkUri = makeSinkUri(outPath, runNumber, currentSegment);
+	    pSink.reset(makeDataSink(sinkUri));
 	    currentBytes = 0; // New segment.
 	}
 	
@@ -529,7 +529,8 @@ recvStatsThread(Reassembler* r)
 		      << stats.get<5>() << std::endl;
 	}
 
-        // std::cout << "\tEvents lost so far: ";
+        std::cout << "\tEvents lost so far: ";
+	std::cout << lostEvents.size() << std::endl;
         // for(auto evt: lostEvents)
         // {
         //     std::cout << "<" << evt.first << ":" << evt.second << "> ";
