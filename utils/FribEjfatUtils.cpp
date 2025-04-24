@@ -52,6 +52,8 @@ namespace frib_ejfat {
 	    for (size_t i = bytesToPrint; i < perLine; ++i) {
 		std::cerr << "   ";
 	    }
+
+	    std::cerr << std::endl;
 	
 	    printed += perLine;
 	}

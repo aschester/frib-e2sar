@@ -7,7 +7,7 @@ else
 fi
 
 if [ -z "$DAQROOT" ]; then
-    . /usr/opt/daq/12.1-pre6.e2sar/daqsetup.bash
+    . /usr/opt/daq/12.1-008.e2sar/daqsetup.bash
 fi
 
 

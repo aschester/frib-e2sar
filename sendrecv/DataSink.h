@@ -24,6 +24,7 @@
 
 #include <stdlib.h>
 
+struct iovec;
 namespace ufmt {
     class CRingItem;
 }
@@ -53,6 +54,15 @@ public:
      * @param nBytes Number of bytes to write
      */
     virtual void put(const void* pData, size_t nBytes) = 0;
+
+    /**
+     * @brief Vectorized I/O for file sinks. For now it has to be part
+     * of the base class for runtime polymorphism. Maybe best to make
+     * pure virtual and then throw some kind of not-implemented exception
+     * for ringbuffer sinks?
+     */
+    virtual void putItemsV(iovec* iovs, size_t iovcnt) {};
+    virtual void putV(iovec* iovs, size_t iovcnt) {};
 
 };
 

@@ -84,6 +84,7 @@ bool threadsRunning(true);
 Segmenter* segPtr{nullptr};
 LBManager* lbmPtr{nullptr};       // nullptr if CP is not enabled
 std::vector<std::string> senders; // Empty if CP is not enabled
+const double MAX_FILL_PCT = 0.9;  // Percent fill of event buffer before send
 
 /**
  * @brief Shutdown the sender. Remove senders. Stop threads.
@@ -195,7 +196,7 @@ freeBuffer(boost::any a)
  * @param s References our Segmenter instance.
  * @param pSource Pointer to data source where we get ring items.
  * @param nEvents Number of events to send.
- * @param evtBufSize Size of each event buffer, must be big enough to hold a 
+ * @param maxBufSize Size of each event buffer, must be big enough to hold a 
  *   single ring item.
  * @param rateGbps Send rate in Gbps (optional, default=1.0)
  * @param debug Show debugging output (optional, default=false)
@@ -203,22 +204,22 @@ freeBuffer(boost::any a)
  */
 result<int>
 sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
-	   size_t evtBufSize, float rateGbps=1.0, bool debug=false)
+	   size_t maxBufSize, float rateGbps=1.0, bool debug=false)
 {
     // Convert bit rate to event rate. Sleep at least 1 us between sends:
     
-    float eventRate{rateGbps*1000000000/(evtBufSize*8)};
+    float eventRate{rateGbps*1000000000/(maxBufSize*8)};
     u_int64_t interEventSleepUsec{
-	static_cast<u_int64_t>(evtBufSize*8/(rateGbps*1000))
+	static_cast<u_int64_t>(maxBufSize*8/(rateGbps*1000))
     };
     if (interEventSleepUsec == 0) { // Max send rate 1 MHz
 	interEventSleepUsec = 1;
-    }			 
+    }    
 
     std::cout.imbue(std::locale(""));
     std::cout << "Sending bit rate is " << rateGbps << " Gbps" << std::endl;
-    std::cout << "Event size is " << evtBufSize << " bytes or "
-	      << evtBufSize*8 << " bits" << std::endl;
+    std::cout << "Event size is " << maxBufSize << " bytes or "
+	      << maxBufSize*8 << " bits" << std::endl;
     std::cout << "Event rate is " << eventRate << " Hz" << std::endl;
     std::cout << "Inter-event sleep time is " << interEventSleepUsec
 	      << " microseconds" << std::endl;
@@ -236,9 +237,6 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	std::cout << "Segmenter started OK\n";
     }	
 
-    // Create our buffer pool:
-	
-    evtBufPool = new boost::pool<>{evtBufSize};
     
     // Sleep to allow small number of frames to leave:
     
@@ -249,7 +247,11 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
     // Send loop
     //
 
+    // Create our buffer pool:
+	
+    evtBufPool = new boost::pool<>{maxBufSize};
     u_int8_t* evtBuf{nullptr}; // Buffer from pool - fill and send.
+    size_t maxBytes = MAX_FILL_PCT * maxBufSize;
     
     if (debug) {
 	std::cout << "Starting send loop at: "
@@ -262,45 +264,42 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
     EventNum_t evtNumber = 0; // Iterate on send.
     u_int16_t  dataId    = 0; // Default.
     u_int16_t  entropy   = 0; // Default.
+    bool eof = false;
     
-    while (1) {
-	
+    while (!eof) {	
 	auto now = boost::chrono::high_resolution_clock::now();
 	
 	if (!evtBufQueue.pop(evtBuf)) {
 	    evtBuf = static_cast<u_int8_t*>(evtBufPool->malloc());
 	}
 
-	std::unique_ptr<CRingItem> pItem(pSource->getItem());
-	
-	if (!pItem.get()) { // End of source.
-	    break;
-	}
-	
-	// Extract information from the event, copy it into the event buffer,
-	// and add it to the send queue. Event number is timestamp, data Id
-	// is the source Id. In the case no body header is present, the
-	// event timestamp is UINT64_MAX and the data Id is 0.
+	// Pack ring items into the event buffer:
 
-	uint32_t   evtBufSize = pItem->size();
-	
-	if (pItem->hasBodyHeader()) {
-	    evtNumber = pItem->getEventTimestamp();
-	    dataId = pItem->getSourceId();
-	}
-	
-	memcpy(evtBuf, pItem->getItemPointer(), evtBufSize);
-	
+	u_int8_t* p = evtBuf;    // Pointer to first byte
+	size_t currentBytes = 0; // Bytes in send buffer
+
+	while (currentBytes < maxBytes) {
+	    std::unique_ptr<CRingItem> pItem(pSource->getItem());	
+	    if (!pItem.get()) {
+		eof = true;  // End of source
+		break;
+	    }
+	    uint32_t itemSize = pItem->size();
+	    memcpy(p, pItem->getItemPointer(), itemSize);
+	    currentBytes += itemSize;
+	    p += itemSize; // Prepare to copy next item
+	} // End // buffer packing
+
 	if (debug) {
 	    std::cout << "Sending event:" << std::endl;
 	    std::cout << "\tevtNumber:  " << evtNumber << std::endl;
 	    std::cout << "\tdataId:     " << dataId << std::endl;
-	    std::cout << "\tevtBufSize: " << evtBufSize << std::endl;
-	    std::cout << "\titem type:  " << pItem->type() << std::endl;
-	    std::cout << pItem->toString() << std::endl;
+	    std::cout << "\tevtBufSize: " << currentBytes << std::endl;
+	    std::cout << "\tevtBufFill: " << maxBytes << std::endl;
+	    std::cout << "\tevtBufMax:  " << maxBufSize << std::endl;
 	}
-	    
-	rv = s.addToSendQueue(evtBuf, evtBufSize, evtNumber, dataId,
+	
+	rv = s.addToSendQueue(evtBuf, currentBytes, evtNumber, dataId,
 			      entropy, &freeBuffer, evtBuf);
 	if (rv.has_error()) {
 	    std::cout << rv.error().message() << std::endl;
@@ -326,16 +325,13 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	
 	evtNumber++;
 
-	// Check if we've hit a limit:
-	
-	if (nEvents != 0 && evtNumber == nEvents) {
-	    break;
-	}
+	// Check if we've hit a limit or EOF:
+
+	if (nEvents != 0 && evtNumber == nEvents) { break; }
 
 	// Wait to send next event:
     
 	boost::this_thread::sleep_until(until);
-	
     } // End of send loop
 
     // Done sending events, report:
@@ -350,6 +346,12 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 		  << strerror(stats.get<2>()) << std::endl;
     }
 
+    // Cleaup pool:
+    
+    u_int8_t* item{nullptr};
+    while (evtBufQueue.pop(item)) {
+	evtBufPool->free(item);
+    }    
     evtBufPool->purge_memory();
     
     return EXIT_SUCCESS;
@@ -533,6 +535,8 @@ main(int argc, char* argv[])
 	shutdown();
 	return EXIT_FAILURE;
     }
+
+    // while(true) { /* Wait indefinitely */ }
     
     shutdown();
     
