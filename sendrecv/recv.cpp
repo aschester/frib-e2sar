@@ -494,46 +494,49 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory,
 void
 recvStatsThread(Reassembler* r)
 {
-    std::vector<std::pair<EventNum_t, u_int16_t>> lostEvents;
+    std::vector<boost::tuple<EventNum_t, u_int16_t, size_t>> lostEvents;
 
     while(threadsRunning)
     {
-        auto now = boost::chrono::high_resolution_clock::now();
+        auto nowT = boost::chrono::high_resolution_clock::now();
+
         auto stats = r->getStats();
 
         while(true)
         {
-            auto rv = r->get_LostEvent();
-            if (rv.has_error())
+            auto res = r->get_LostEvent();
+            if (res.has_error())
                 break;
-            lostEvents.push_back(rv.value());
+            lostEvents.push_back(res.value());
         }
+        /*
+             *  - 0 EventNum_t enqueueLoss;  // number of events received and lost on enqueue
+             *  - 1 EventNum_t reassemblyLoss; // number of events lost in reassembly due to missing segments
+             *  - 2 EventNum_t eventSuccess; // events successfully processed
+             *  - 3 int lastErrno; 
+             *  - 4 int grpcErrCnt; 
+             *  - 5 int dataErrCnt; 
+             *  - 6 E2SARErrorc lastE2SARError; 
+        */
+        std::cout << "Stats:" << std::endl;
+        std::cout << "\tEvents Received: " << stats.eventSuccess << std::endl;
+        std::cout << "\tEvents Lost in reassembly: " << stats.reassemblyLoss << std::endl;
+        std::cout << "\tEvents Lost in enqueue: " << stats.enqueueLoss << std::endl;
+        std::cout << "\tData Errors: " << stats.dataErrCnt << std::endl;
+        if (stats.dataErrCnt > 0)
+            std::cout << "\tLast Data Error: " << strerror(stats.lastErrno) << std::endl;
+        std::cout << "\tgRPC Errors: " << stats.grpcErrCnt << std::endl;
+        if (stats.lastE2SARError != E2SARErrorc::NoError)
+            std::cout << "\tLast E2SARError code: " << make_error_code(stats.lastE2SARError).message() << std::endl;
 
-        std::cout << "Stats:" << std::endl;	
-	std::cout << "\tCurrent time: " << pt::second_clock::local_time()
-		  << std::endl;
-        std::cout << "\tEvents Received: " << stats.get<1>() << std::endl;
-        std::cout << "\tEvents Lost: " << stats.get<0>() << std::endl;
-        std::cout << "\tData Errors: " << stats.get<4>() << std::endl;
-        if (stats.get<4>() > 0) {
-            std::cout << "\tLast Data Error: "
-		      << strerror(stats.get<2>()) << std::endl;
-	    std::cout << "\tgRPC Errors: " << stats.get<3>() << std::endl;
-	}
-        if (stats.get<5>() != E2SARErrorc::NoError) {
-            std::cout << "\tLast E2SARError code: "
-		      << stats.get<5>() << std::endl;
-	}
+        std::cout << "\tEvents lost so far (<Evt ID:Data ID/num frags rcvd>): ";
+        for(auto evt: lostEvents)
+        {
+            std::cout << "<" << evt.get<0>() << ":" << evt.get<1>() << "/" << evt.get<2>() << "> ";
+        }
+        std::cout << std::endl;
 
-        std::cout << "\tEvents lost so far: ";
-	std::cout << lostEvents.size() << std::endl;
-        // for(auto evt: lostEvents)
-        // {
-        //     std::cout << "<" << evt.first << ":" << evt.second << "> ";
-        // }
-        // std::cout << std::endl;
-
-        auto until = now + boost::chrono::milliseconds(reportThreadSleepMs);
+        auto until = nowT + boost::chrono::milliseconds(reportThreadSleepMs);
         boost::this_thread::sleep_until(until);
     }
 }

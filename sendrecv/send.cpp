@@ -335,23 +335,35 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
     } // End of send loop
 
     // Done sending events, report:
-   
-    auto stats = s.getSendStats();
 
-    std::cout << "Completed, " << stats.get<0>() << " frames sent, "
-	      << stats.get<1>() << " errors" << std::endl;
-    if (stats.get<1>() != 0)
-    {
-        std::cout << "Last error encountered: "
-		  << strerror(stats.get<2>()) << std::endl;
+    // measure this right after we exit the send loop
+    auto stats = s.getSendStats();
+    std::cout << "Completed, " << stats.msgCnt
+	      << " frames sent, " << stats.errCnt << " errors"
+	      << std::endl;
+    if (stats.errCnt != 0) {
+        if (stats.lastE2SARError != E2SARErrorc::NoError) {
+            std::cout << "Last E2SARError code: "
+		      << make_error_code(stats.lastE2SARError).message()
+		      << std::endl;
+        } else
+            std::cout << "Last error encountered: "
+		      << strerror(stats.lastErrno)
+		      << std::endl;
     }
+    
+    // auto stats = s.getSendStats();
+
+    // std::cout << "Completed, " << stats.get<0>() << " frames sent, "
+    // 	      << stats.get<1>() << " errors" << std::endl;
+    // if (stats.get<1>() != 0)
+    // {
+    //     std::cout << "Last error encountered: "
+    // 		  << strerror(stats.get<2>()) << std::endl;
+    // }
 
     // Cleaup pool:
-    
-    u_int8_t* item{nullptr};
-    while (evtBufQueue.pop(item)) {
-	evtBufPool->free(item);
-    }    
+   
     evtBufPool->purge_memory();
     
     return EXIT_SUCCESS;
