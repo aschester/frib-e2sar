@@ -172,6 +172,9 @@ getOpts(int ac, char* av[])
     if (vm.count("help"))
     {
         std::cout << od << std::endl;
+	std::cout << "E2SAR Available Optimizations: "
+		  << concatWithSeparator(Optimizations::availableAsStrings())
+		  << std::endl;
         exit(EXIT_SUCCESS);
     }
     
@@ -477,7 +480,18 @@ main(int argc, char* argv[])
 	    std::cout << "Using URI: " << ejfatUri.to_string() << std::endl;
 	    std::cout << "Sending " << nEvents << " events" << std::endl;
 	    std::cout << "Max buffer: " << evtBufSize << " bytes" << std::endl;
-	}	
+	}
+
+	std::vector<std::string> optimizations;
+	optimizations.push_back("sendmmsg");
+	auto ropt = Optimizations::select(optimizations);
+	if (ropt.has_error()) {
+	    std::cerr << ropt.error().message() << std::endl;
+	    exit(EXIT_FAILURE);
+	}
+	std::cout << "E2SAR Selected Optimizations:  "
+		  << concatWithSeparator(Optimizations::selectedAsStrings())
+		  << std::endl;
 
 	/////////////////////////////////////////////////////////////////////
 	// Instantiate and run Segmenter:
