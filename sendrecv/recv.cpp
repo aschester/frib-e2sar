@@ -61,7 +61,6 @@ using namespace frib_ejfat;
 bool threadsRunning(true);
 u_int16_t reportThreadSleepMs{2000}; // 2 second maximum
 Reassembler* reasPtr{nullptr};
-const uint32_t MAX_BYTES = 2.0*1024*1024*1024; // ~2 GB
 
 /**
  * @brief Shutdown the receiver. Deregister workers. Stop threads.
@@ -169,16 +168,15 @@ getOpts(int ac, char* av[])
  * @brief Make a (file) sink URI from the path and run information.
  * @param outPath Toplevel output directory.
  * @param runNumber Current run number.
- * @param currentSegment Current segment we're writing to.
  * @return Full file sink name.
  */
 std::string
-makeSinkUri(std::string outPath, size_t runNumber, size_t currentSegment)
+makeSinkUri(std::string outPath, size_t runNumber)
 {
     std::string uri("file://");
     uri += outPath;
     char path[1024];
-    sprintf(path, "run-%04d-%02d.evt", runNumber, currentSegment);
+    sprintf(path, "run-%04d-out.evt", runNumber, );
     uri += path;
 
     return uri;
@@ -399,8 +397,7 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory,
 {
     // Create the initial data sink, which we really expect to be a file:
 
-    size_t currentSegment = 0;
-    std::string sinkUri = makeSinkUri(outPath, runNumber, currentSegment);
+    std::string sinkUri = makeSinkUri(outPath, runNumber);
     std::unique_ptr<DataSink> pSink(makeDataSink(sinkUri));
     
     // Received event information and receiver config. We recycle the buffer
@@ -475,13 +472,6 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory,
 	    std::cout << "\tevtBufSize:   " << evtBufSize << std::endl;
 	    std::cout << "\tcurrentBytes: " << currentBytes << std::endl;
 	    std::cout << "\ttotalBytes:   " << totalBytes << std::endl;
-	}
-		
-	if (currentBytes > MAX_BYTES) {
-	    currentSegment++;
-	    sinkUri = makeSinkUri(outPath, runNumber, currentSegment);
-	    pSink.reset(makeDataSink(sinkUri));
-	    currentBytes = 0; // New segment.
 	}
 	
 	delete evtBuf;
