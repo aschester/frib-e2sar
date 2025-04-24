@@ -176,7 +176,7 @@ makeSinkUri(std::string outPath, size_t runNumber)
     std::string uri("file://");
     uri += outPath;
     char path[1024];
-    sprintf(path, "run-%04d-out.evt", runNumber, );
+    sprintf(path, "run-%04d-out.evt", runNumber);
     uri += path;
 
     return uri;
