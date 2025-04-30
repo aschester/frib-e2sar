@@ -319,7 +319,6 @@ writeIOVec(void* pData, size_t nBytes, DataSink* pSink)
     for (size_t i = 0; i < nItems; i++) {
 	iovs[i].iov_base = p;
 	iovs[i].iov_len = itemSize(p);
-	std::cout << "item " << i << " size " << iovs[i].iov_len << std::endl;
 	p = static_cast<u_int8_t*>(nextItem(p));
     }
     
