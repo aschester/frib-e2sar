@@ -564,7 +564,8 @@ main(int argc, char* argv[])
 
     // while(true) { /* Wait indefinitely */ }
     
-    shutdown();
+    //shutdown(); // double free error
+    ctrlCHandler(SIGINT); // apparently "clean" exit... for an interrupt
     
     return EXIT_SUCCESS;
 }

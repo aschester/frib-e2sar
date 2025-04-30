@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Project info:
 ##
 
-project(FRIB_E2SAR VERSION 0.1
+project(FRIB_E2SAR VERSION 0.0.1
   DESCRIPTION "FRIB-E2SAR data processing"
   LANGUAGES CXX
   )
@@ -70,13 +70,14 @@ message(STATUS "Using NSCLDAQ unified format: ${UFMT_ROOT}")
 ##
 
 # -Wall shows a lot of warnings from e.g. NSCLDAQ which we suppress.
-add_compile_options(-g -O2 # -Wall
+add_compile_options(-g -Og # -Wall
   )
 
 # Installation for subdirs handled in their own CMakeList.txt:
-add_subdirectory(utils)
+#add_subdirectory(utils)
 add_subdirectory(checkdefaults)
-add_subdirectory(sendrecv)
+add_subdirectory(e2sarwf)
+#add_subdirectory(sendrecv)
 #add_subdirectory(evtbuild)
 #add_subdirectory(docs)
 

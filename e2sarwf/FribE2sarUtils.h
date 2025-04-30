@@ -1,0 +1,46 @@
+/*
+    This software is Copyright by the Board of Trustees of Michigan
+    State University (c) Copyright 2015
+
+    You may use this software under the terms of the GNU public license
+    (GPL).  The terms of this license are described at:
+
+     http://www.gnu.org/licenses/gpl.txt
+
+     Author:
+             Aaron Chester
+             FRIB
+             Michigan State University
+             East Lansing, MI 48824-1321
+*/
+
+/** 
+ * @file FribEjfatUtils.h
+ * @brief Define some useful functions for E2SAR processing.
+ * @details
+ * Functions exist in the frib_e2sar namespace.
+ */
+
+#ifndef FRIBE2SARUTILS_H
+#define FRIBE2SARUTILS_H
+
+#include <string>
+
+#include <e2sar.hpp>
+
+/**
+ * @namespace frib_e2sar
+ * @brief Namespace for utility functions.
+ */
+namespace frib_e2sar {
+    void dumpBuffer(u_int8_t* buf, size_t nBytes);
+    e2sar::EjfatURI getUri(const std::string uri,
+			   const e2sar::EjfatURI::TokenType& tt,
+			   const bool preferV6=false);
+    e2sar::Segmenter::SegmenterFlags getSegmenterFlagsFromFile(std::string fname);
+    e2sar::Reassembler::ReassemblerFlags getReassemblerFlagsFromFile(std::string fname);
+    void printSegmenterFlags(const e2sar::Segmenter::SegmenterFlags& flags);
+    void printReassemblerFlags(const e2sar::Reassembler::ReassemblerFlags& flags);
+}
+    
+#endif

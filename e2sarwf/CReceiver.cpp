@@ -1,0 +1,441 @@
+#include "CReceiver.h"
+
+#include <csignal>
+#include <filesystem>
+#include <iostream>
+
+// E2SAR includes and deps:
+
+#include <e2sar.hpp>
+
+// Unified format library:
+
+#include <DataFormat.h>
+
+// Other NSCLDAQ includes:
+
+#include <URL.h>
+
+// Project headers:
+
+#include "FribE2sarUtils.h"
+#include "DataSink.h"
+#include "FileDataSink.h"
+#include "RingDataSink.h"
+
+using namespace e2sar;
+using namespace frib_e2sar;
+using namespace ufmt;
+
+CReceiver* CReceiver::m_pInstance = nullptr;
+
+CReceiver::CReceiver(po::variables_map& vm) :
+    m_proto(vm["proto"].as<std::string>()),
+    m_hostName(vm["hostname"].as<std::string>()),
+    m_basePath(vm["basepath"].as<std::string>()),
+    m_baseName(vm["basename"].as<std::string>()),
+    m_duration(vm["duration"].as<int>()),
+    m_deqThreads(vm["deq"].as<size_t>()),
+    m_threadsRunning(false),
+    m_debug(vm["debug"].as<bool>()),
+    m_verbose(vm["verbose"].as<bool>())
+{
+    /////////////////////////////////////////////////////////////////////////
+    // Set instance and register signal handler
+    //
+
+    if (m_pInstance) {
+	throw std::runtime_error("CReceiver instance already exists!");
+    } else {
+	setInstance(this);
+	std::signal(SIGINT, ctrlCHandler);
+    }
+
+    /////////////////////////////////////////////////////////////////////////
+    // Configure data sink
+    //
+
+    auto daqVersion = vm["nscldaq-version"].as<int>();    
+    FormatSelector::SupportedVersions version = mapVersion(daqVersion);
+    auto& factory = FormatSelector::selectFactory(version);
+
+    /////////////////////////////////////////////////////////////////////////
+    // Read ini file and get flags
+    //
+
+    std::string iniFile;
+    if (!vm.count("ini")) {
+	auto cwd = std::filesystem::current_path();
+	iniFile = cwd.string() + "/reassembler_config.ini";
+    }
+    
+    auto flags = getReassemblerFlagsFromFile(iniFile);
+
+    /////////////////////////////////////////////////////////////////////////
+    // Create EJFAT URI
+    //
+    
+    EjfatURI::TokenType tt{EjfatURI::TokenType::instance};
+    bool preferV6 = false; // For now always Ipv4
+    auto ejfatUri = getUri(vm["uri"].as<std::string>(), tt, preferV6);
+
+    /////////////////////////////////////////////////////////////////////
+    // Instantiate Reassembler
+    //
+
+    auto ip_s = vm["ip"].as<std::string>();
+    auto port = vm["port"].as<u_int16_t>();
+    auto numThreads = vm["threads"].as<size_t>(); // Reassembler
+    auto deqThreads = vm["deq"].as<size_t>();     // Dequeue/read
+
+    ip::address ip = ip::make_address(ip_s);    
+    m_pReassembler = std::make_unique<Reassembler>(ejfatUri, ip, port, numThreads, flags);
+    
+    if (m_verbose) {
+	std::cout << "----- Receiver configuration -----" << std::endl;
+	printReassemblerFlags(flags);
+     }
+}
+
+CReceiver::~CReceiver()
+{
+    shutdown();
+}
+
+int
+CReceiver::operator()()
+{
+    m_threadsRunning = true;
+
+    // boost::thread statsThread(boost::bind(&CReceiver::statsThread, this));
+
+    if (prepareToReceive()) {
+	throw std::runtime_error("Failed to initialize and start Reassembler");
+    }
+
+    std::vector<boost::thread> threads;
+    for (size_t i = 0; i < m_deqThreads; i++) {
+	boost::thread t(std::bind(&CReceiver::receiveEvents, this, i));
+	threads.push_back(std::move(t)); // Transfer, don't copy!
+    }
+
+    for (auto& t : threads) {
+	t.join();
+    }
+    
+    return 0;
+}
+
+/**
+ * @brief Handle Ctrl-C interrupt and shutdown safely
+ * @param sig Signal to handle (expected to be SIGINT)
+ * @note Re-raises default signal after shutdown
+ */
+void
+CReceiver::ctrlCHandler(int sig) 
+{
+    if (m_pInstance) {
+	m_pInstance->shutdown();
+    }
+    std::signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+/****************************************************************************
+ * Private functions                                                        *
+ ***************************************************************************/
+
+/**
+ * @brief Shutdown the receiver. Deregister workers. Stop threads.
+ */
+void
+CReceiver::shutdown()
+{
+    std::cout << "Stopping threads" << std::endl;
+    m_threadsRunning = false;
+    boost::chrono::milliseconds duration(1000);
+    boost::this_thread::sleep_for(duration);
+
+    if (m_pReassembler) {
+	std::cout << "Deregistering worker" << std::endl;
+        auto rv = m_pReassembler->deregisterWorker();
+        if (rv.has_error()) {
+            std::cerr << "Unable to deregister worker on exit: "
+		      << rv.error().message() << std::endl;
+	}
+        m_pReassembler->stopThreads();
+    }
+    
+    boost::this_thread::sleep_for(duration);   
+}
+
+/**
+ * @brief Map the version we get from the command line to a factory version
+ * @param vsn Format the user requested
+ * @throw std::invalid_argument Bad format version
+ * @return Factory version ID (from the enum)
+ */
+FormatSelector::SupportedVersions
+CReceiver::mapVersion(int vsn)
+{
+    switch (vsn) {
+    case 12:
+	return FormatSelector::v12;
+    case 11:
+	return FormatSelector::v11;
+    case 10:
+	throw std::invalid_argument("NSCLDAQ 10 is not currently supported");
+    default:
+	throw std::invalid_argument("Invalid DAQ format version specifier");
+    }
+}
+
+void
+CReceiver::statsThread()
+{
+    std::vector<boost::tuple<EventNum_t, u_int16_t, size_t>> lostEvents;
+
+    while (m_threadsRunning) {
+	auto now = boost::chrono::high_resolution_clock::now();
+	
+        auto stats = m_pReassembler->getStats();
+	
+        while(true) {
+            auto rv = m_pReassembler->get_LostEvent();
+            if (rv.has_error()) {
+                break;
+	    }
+            lostEvents.push_back(rv.value());
+        }	
+	/*
+	 *  - 0 EventNum_t enqueueLoss;
+	 *  - 1 EventNum_t reassemblyLoss;
+	 *  - 2 EventNum_t eventSuccess;
+	 *  - 3 int lastErrno; 
+	 *  - 4 int grpcErrCnt; 
+	 *  - 5 int dataErrCnt; 
+	 *  - 6 E2SARErrorc lastE2SARError; 
+	 */
+	std::cout << "Stats:" << std::endl;
+        std::cout << "\tEvents Received: " << stats.eventSuccess << std::endl;
+        std::cout << "\tEvents Lost in reassembly: " << stats.reassemblyLoss << std::endl;
+        std::cout << "\tEvents Lost in enqueue: " << stats.enqueueLoss << std::endl;
+        std::cout << "\tData Errors: " << stats.dataErrCnt << std::endl;
+	
+        if (stats.dataErrCnt > 0) {
+            std::cout << "\tLast Data Error: " << strerror(stats.lastErrno) << std::endl;
+	}
+        std::cout << "\tgRPC Errors: " << stats.grpcErrCnt << std::endl;
+	
+        if (stats.lastE2SARError != E2SARErrorc::NoError) {
+            std::cout << "\tLast E2SARError code: " << make_error_code(stats.lastE2SARError).message() << std::endl;
+	}
+
+        std::cout << "\tEvents lost so far (<Evt ID:Data ID/num frags rcvd>): ";
+        for(auto evt: lostEvents) {
+            std::cout << "<" << evt.get<0>() << ":" << evt.get<1>() << "/" << evt.get<2>() << "> ";
+        }
+        std::cout << std::endl;
+
+        auto until = now + boost::chrono::milliseconds(2000);
+        boost::this_thread::sleep_until(until);
+    }
+}
+
+int
+CReceiver::prepareToReceive()
+{
+    if (m_verbose) {
+	std::cout << "Receiving on ports "
+		  << m_pReassembler->get_recvPorts().first << ":" 
+		  << m_pReassembler->get_recvPorts().second << std::endl;
+    }
+
+    // Worker registration is NOP if not using control plane:
+    
+    auto rvhn = NetUtil::getHostName();
+    if (rvhn.has_error()) {
+	std::cerr << "Failed to get hostname: " << rvhn.error().message()
+		  << " with error code " << rvhn.error().code() << std::endl;
+	return -1;
+    }
+
+    auto rvrw = m_pReassembler->registerWorker(rvhn.value());
+    if (rvrw.has_error()) {
+	std::cerr << "Unable to register worker: " << rvrw.error().message()
+		  << " with error code " << rvrw.error().code() << std::endl;
+        return -1;
+    }
+
+    boost::this_thread::sleep_for(boost::chrono::seconds(1));
+
+    // @note If we switch the order of registerWorker and openAndStart
+    // you get into a race condition where the sendState thread starts and
+    // tries to send queue updates, however the session token is not yet
+    // available...
+    
+    auto rvoas = m_pReassembler->openAndStart();
+    if (rvoas.has_error()) {
+     	std::cerr << "Unable to start Reassembler: " << rvoas.error().message()
+		  << " with error code " << rvoas.error().code() << std::endl;
+    }
+        
+    return 0;
+}
+
+int
+CReceiver::receiveEvents(size_t threadNum) {
+
+    std::unique_ptr<DataSink> pSink(makeDataSink(threadNum));
+
+    // Received event information and receiver config. The extent of good
+    // data for a particular event is defined by evtBufSize.
+
+    u_int8_t*  evtBuf{nullptr}; // Event buffer for data reads
+    size_t     evtBufSize;      // Event buffer size in bytes
+    EventNum_t evtNum;          // Event number
+    u_int16_t  dataId;          // Data source Id
+    size_t     totalBytes = 0;  // Total bytes written
+    
+    auto start = boost::chrono::steady_clock::now();
+    
+    while (m_threadsRunning) {
+	auto now = boost::chrono::steady_clock::now();
+	if (m_duration != 0
+	    && (now - start) > boost::chrono::seconds(m_duration)) {
+	    break;
+	}
+
+	// Use non-blocking receive:
+		
+	auto rv = m_pReassembler->getEvent(&evtBuf, &evtBufSize,
+					   &evtNum, &dataId);
+	if (rv.has_error()) {
+	    std::cerr << "Reassembler failed to get event: "
+		      << rv.error().message() << " with error code "
+		      << rv.error().code() << std::endl;
+	    return -1;
+	}
+
+	if (rv.value() == -1) { // Queue is empty
+	    continue;
+	}
+	
+	/////////////////////////////////////////////////////////////////////
+	// Data post-processing: write buffer data to sink
+	//
+
+	dumpBuffer(evtBuf, evtBufSize);
+	totalBytes += evtBufSize;
+	
+	if (m_debug) {
+	    std::cout << "Received event:  " << std::endl;
+	    std::cout << "\tevtNumber:    " << evtNum << std::endl;
+	    std::cout << "\tdataId:       " << dataId << std::endl;
+	    std::cout << "\tevtBufSize:   " << evtBufSize << std::endl;
+	    std::cout << "\ttotalBytes:   " << totalBytes << std::endl;
+	}
+
+	write(evtBuf, evtBufSize, pSink.get());
+	
+	delete evtBuf;
+	evtBuf = nullptr;
+    }
+
+    return 0;
+}
+
+void
+CReceiver::write(void* pData, size_t nBytes, DataSink* pSink)
+{
+    auto p = static_cast<u_int8_t*>(pData);
+    size_t nItems = countRingItems(p, nBytes);
+    std::vector<iovec> iovs(nItems);
+    
+    for (size_t i = 0; i < nItems; i++) {
+	iovs[i].iov_base = p;
+	iovs[i].iov_len = itemSize(p);
+	p = static_cast<u_int8_t*>(nextItem(p));
+    }
+
+    pSink->putV(iovs.data(), iovs.size());
+}
+
+DataSink*
+CReceiver::makeDataSink(size_t threadNum)
+{
+    URL url(makeSinkUri(threadNum));
+    std::string proto(url.getProto());
+    std::string path(url.getPath());
+    if (proto == "tcp" || proto == "ring") {
+	return new RingDataSink(path);
+    } else if (proto == "file") {
+	return new FileDataSink(path);
+    } else {
+	throw std::runtime_error("Unknown protocol for sink " + proto);
+    }
+}
+
+std::string
+CReceiver::makeSinkUri(size_t threadNum)
+{
+    char uri[256]; // Hopefully big enough...
+    if (m_proto == "ring" || m_proto == "tcp") {
+	sprintf(uri, "%s://%s/%s_t%.2d", m_proto.c_str(),
+		m_hostName.c_str(), m_baseName.c_str(), threadNum);
+    } else if (m_proto == "file") {
+	sprintf(uri, "%s://%s/%s_t%.2d.evt", m_proto.c_str(),
+		m_basePath.c_str(), m_baseName.c_str(), threadNum);
+    }
+    
+    return std::string(uri);
+}
+
+/**
+ * @brief Return the size of the item
+ * @param pData Pointer to a ring item
+ * @return Number of bytes in that item
+ */
+size_t
+CReceiver::itemSize(void* pData)
+{
+    return static_cast<RingItemHeader*>(pData)->s_size;
+}
+
+/**
+ * @brief Get pointer to beginning of next item
+ * @param pData Pointer to data block
+ * @return void* Pointer to the next item in the block
+ */
+void*
+CReceiver::nextItem(void* pData)
+{
+    size_t n = itemSize(pData);
+    uint8_t* p = static_cast<uint8_t*>(pData);
+    p += n;
+    
+    return p;
+}
+
+/**
+ * @brief Count the number of items in a block of data
+ * @param pData Pointer to the data
+ * @param nBytes Number of bytes in the block
+ * @return Number of items in the block
+ */
+size_t
+CReceiver::countRingItems(void* pData, size_t nBytes)
+{
+    size_t result(0);
+    while (nBytes) {
+        result++;
+	if (m_debug) {
+	    std::cout << "Item " << result << " size " << itemSize(pData) << std::endl;
+	}
+        nBytes -= itemSize(pData);
+        pData   = nextItem(pData);
+	std::cout << nBytes << " " << pData << std::endl;
+    }
+    
+    return result;
+}

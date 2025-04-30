@@ -324,7 +324,7 @@ writeIOVec(void* pData, size_t nBytes, DataSink* pSink)
 	p = static_cast<u_int8_t*>(nextItem(p));
     }
     
-    pSink->putItemsV(iovs.data(), iovs.size());
+    pSink->putV(iovs.data(), iovs.size());
 }
 
 /**
