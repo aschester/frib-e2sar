@@ -313,10 +313,13 @@ writeIOVec(void* pData, size_t nBytes, DataSink* pSink)
     auto p = static_cast<u_int8_t*>(pData);
     size_t nItems = countRingItems(p, nBytes);
     std::vector<iovec> iovs(nItems);
+
+    std::cout << "contains " << nItems << std::endl;
     
     for (size_t i = 0; i < nItems; i++) {
 	iovs[i].iov_base = p;
 	iovs[i].iov_len = itemSize(p);
+	std::cout << "item " << i << " size " << iovs[i].iov_len << std::endl;
 	p = static_cast<u_int8_t*>(nextItem(p));
     }
     
@@ -458,17 +461,20 @@ recvEvents(Reassembler* r, RingItemFactoryBase& factory,
 
 	/** @todo (ASC 4/16/25): --no-write option as we just add more and 
 	 * more damn flags and parameters. */
+
+	// dumpBuffer(evtBuf, evtBufSize);
 	
 	if (useIov) {
-	    //writeIOVec(evtBuf, evtBufSize, pSink.get());
+	    writeIOVec(evtBuf, evtBufSize, pSink.get());
 	} else {
-	    //writeRingItems(evtBuf, evtBufSize, pSink.get(), factory, version);
+	    writeRingItems(evtBuf, evtBufSize, pSink.get(), factory, version);
 	}
 
 	currentBytes += evtBufSize;
 	totalBytes += evtBufSize;
 	
 	if (debug) {
+	    dumpBuffer(evtBuf, evtBufSize);
 	    std::cout << "Receive event:  " << std::endl;
 	    std::cout << "\tevtNumber:    " << evtNum << std::endl;
 	    std::cout << "\tdataId:       " << dataId << std::endl;
@@ -502,32 +508,32 @@ recvStatsThread(Reassembler* r)
 
     while(threadsRunning)
     {
-        auto now = boost::chrono::high_resolution_clock::now();
-        auto stats = r->getStats();
+        // auto now = boost::chrono::high_resolution_clock::now();
+        // auto stats = r->getStats();
 
-        while(true)
-        {
-            auto rv = r->get_LostEvent();
-            if (rv.has_error())
-                break;
-            lostEvents.push_back(rv.value());
-        }
+        // while(true)
+        // {
+        //     auto rv = r->get_LostEvent();
+        //     if (rv.has_error())
+        //         break;
+        //     lostEvents.push_back(rv.value());
+        // }
 
-        std::cout << "Stats:" << std::endl;	
-	std::cout << "\tCurrent time: " << pt::second_clock::local_time()
-		  << std::endl;
-        std::cout << "\tEvents Received: " << stats.get<1>() << std::endl;
-        std::cout << "\tEvents Lost: " << stats.get<0>() << std::endl;
-        std::cout << "\tData Errors: " << stats.get<4>() << std::endl;
-        if (stats.get<4>() > 0) {
-            std::cout << "\tLast Data Error: "
-		      << strerror(stats.get<2>()) << std::endl;
-	    std::cout << "\tgRPC Errors: " << stats.get<3>() << std::endl;
-	}
-        if (stats.get<5>() != E2SARErrorc::NoError) {
-            std::cout << "\tLast E2SARError code: "
-		      << stats.get<5>() << std::endl;
-	}
+        // std::cout << "Stats:" << std::endl;	
+	// std::cout << "\tCurrent time: " << pt::second_clock::local_time()
+	// 	  << std::endl;
+        // std::cout << "\tEvents Received: " << stats.get<1>() << std::endl;
+        // std::cout << "\tEvents Lost: " << stats.get<0>() << std::endl;
+        // std::cout << "\tData Errors: " << stats.get<4>() << std::endl;
+        // if (stats.get<4>() > 0) {
+        //     std::cout << "\tLast Data Error: "
+	// 	      << strerror(stats.get<2>()) << std::endl;
+	//     std::cout << "\tgRPC Errors: " << stats.get<3>() << std::endl;
+	// }
+        // if (stats.get<5>() != E2SARErrorc::NoError) {
+        //     std::cout << "\tLast E2SARError code: "
+	// 	      << stats.get<5>() << std::endl;
+	// }
 
         // std::cout << "\tEvents lost so far: ";
         // for(auto evt: lostEvents)
@@ -536,8 +542,8 @@ recvStatsThread(Reassembler* r)
         // }
         // std::cout << std::endl;
 
-        auto until = now + boost::chrono::milliseconds(reportThreadSleepMs);
-        boost::this_thread::sleep_until(until);
+        // auto until = now + boost::chrono::milliseconds(reportThreadSleepMs);
+        // boost::this_thread::sleep_until(until);
     }
 }
 

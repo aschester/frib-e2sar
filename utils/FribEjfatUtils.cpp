@@ -170,7 +170,7 @@ namespace frib_ejfat {
     {
 	std::cout << "Segmenter flags:\n";
 	std::cout << "\tdpV6\t\t" << flags.dpV6 << std::endl;
-	std::cout << "\tzeroCopy\t" << flags.zeroCopy << std::endl;
+	// std::cout << "\tzeroCopy\t" << flags.zeroCopy << std::endl;
 	std::cout << "\tconnectedSocket\t" << flags.connectedSocket
 		  << std::endl;
 	std::cout << "\tuseCP\t\t" << flags.useCP << std::endl;

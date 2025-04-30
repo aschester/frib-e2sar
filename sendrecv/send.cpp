@@ -285,12 +285,16 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 		break;
 	    }
 	    uint32_t itemSize = pItem->size();
+	    if (debug) {
+		std::cout << "item size " << itemSize << std::endl;
+	    }
 	    memcpy(p, pItem->getItemPointer(), itemSize);
 	    currentBytes += itemSize;
 	    p += itemSize; // Prepare to copy next item
-	} // End // buffer packing
+	} // End buffer packing
 
 	if (debug) {
+	    dumpBuffer(evtBuf, currentBytes);
 	    std::cout << "Sending event:" << std::endl;
 	    std::cout << "\tevtNumber:  " << evtNumber << std::endl;
 	    std::cout << "\tdataId:     " << dataId << std::endl;
@@ -298,6 +302,8 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 	    std::cout << "\tevtBufFill: " << maxBytes << std::endl;
 	    std::cout << "\tevtBufMax:  " << maxBufSize << std::endl;
 	}
+
+	// dumpBuffer(evtBuf, currentBytes);
 	
 	rv = s.addToSendQueue(evtBuf, currentBytes, evtNumber, dataId,
 			      entropy, &freeBuffer, evtBuf);
@@ -336,15 +342,15 @@ sendEvents(Segmenter& s, DataSource* pSource, size_t nEvents,
 
     // Done sending events, report:
    
-    auto stats = s.getSendStats();
+    // auto stats = s.getSendStats();
 
-    std::cout << "Completed, " << stats.get<0>() << " frames sent, "
-	      << stats.get<1>() << " errors" << std::endl;
-    if (stats.get<1>() != 0)
-    {
-        std::cout << "Last error encountered: "
-		  << strerror(stats.get<2>()) << std::endl;
-    }
+    // std::cout << "Completed, " << stats.get<0>() << " frames sent, "
+    // 	      << stats.get<1>() << " errors" << std::endl;
+    // if (stats.get<1>() != 0)
+    // {
+    //     std::cout << "Last error encountered: "
+    // 		  << strerror(stats.get<2>()) << std::endl;
+    // }
 
     // Cleaup pool:
     
