@@ -16,14 +16,13 @@
 	     East Lansing, MI 48824-1321
 */
 
-#ifndef DATASOURCE_H
-#define DATASOURCE_H
-
 /** 
  * @file  DataSource.h
- * @brief Works with factories to provide a data source for undifferentiated 
- * ring items.
+ * @brief Provide a data source for undifferentiated ring items.
  */
+
+#ifndef DATASOURCE_H
+#define DATASOURCE_H
 
 namespace ufmt {
     class CRingItem;
@@ -32,17 +31,16 @@ namespace ufmt {
 
 /**
  * @class DataSource
- * @brief Abstract data source base class.
+ * @brief Abstract data source base class
  * @details
- * Pure abstract data source which uses a factory's ring item getters to
- * provide ring items from a data source. Since the factory provides this,
- * we'll need concrete classes:
+ * Pure abstract data source to provide ring items from a data source using a 
+ * ring item factory. We'll also need some concrete classes:
  * - FdDataSource: give data from a file descriptor.
  * - StreamDataSource: give data from a stream.
  * @note Neither of these data sources supports reading directly from a ring 
- *   buffer, as the format library is possibly unaware of those NSCLDAQ classes.
- *   To read data from a ringbuffer you can create a file descriptor data 
- *   source and read data from stdin i.e. `ringselector | send -s -`.
+ * buffer, as the format library is possibly unaware of those NSCLDAQ classes.
+ * To read data from a ringbuffer you can create a file descriptor data 
+ * source and read data from stdin i.e. `ringselector | send -s -`.
  */
 
 class DataSource {
@@ -51,19 +49,22 @@ protected:
     
 public:
     /** 
-     * @brief Constructor. 
-     * @param pFactory Pointer to concrete ring item factory. 
+     * @brief Constructor.
+     * @param pFactory Pointer to concrete ring item factory.
      */
     DataSource(ufmt::RingItemFactoryBase* pFactory);
     /** @brief Destructor. */
     virtual ~DataSource() = default;
     /** 
-     * @brief Pure-virtual method to access a ring item from the data source. 
-     * Must be implemented in derived classes.
-     * @return Pointer to the next ring item from the source.
+     * @brief Pure-virtual method to access a ring item from the data source 
+     * Must be implemented in derived classes
+     * @return Pointer to the next ring item from the source
      */
     virtual ufmt::CRingItem* getItem() = 0;
-    /** @brief Set a new factory. */
+    /**
+     * @brief Set a new factory 
+     * @param pFactory Pointer to new ring item factory
+     */
     void setFactory(ufmt::RingItemFactoryBase* pFactory);
 };
 

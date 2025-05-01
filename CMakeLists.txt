@@ -74,12 +74,9 @@ add_compile_options(-g -Og # -Wall
   )
 
 # Installation for subdirs handled in their own CMakeList.txt:
-#add_subdirectory(utils)
 add_subdirectory(checkdefaults)
 add_subdirectory(e2sarwf)
-#add_subdirectory(sendrecv)
-#add_subdirectory(evtbuild)
-#add_subdirectory(docs)
+add_subdirectory(docs)
 
 # Install ini and script directories as-is:
 install(DIRECTORY ini/ DESTINATION ini

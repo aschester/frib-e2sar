@@ -27,7 +27,7 @@
 using namespace ufmt;
 
 RingDataSink::RingDataSink(std::string ringName)
-  : m_pRing(0),
+  : m_pRing(nullptr),
     m_ringName(ringName)
 {
   openRing();
@@ -35,8 +35,8 @@ RingDataSink::RingDataSink(std::string ringName)
 
 RingDataSink::~RingDataSink()
 {
-  delete m_pRing;
-  m_pRing=0;
+    delete m_pRing;
+    m_pRing=nullptr;
 }
 
 /**

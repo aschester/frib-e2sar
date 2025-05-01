@@ -1,4 +1,26 @@
-#include "CSender.h"
+/*
+    This software is Copyright by the Board of Trustees of Michigan
+    State University (c) Copyright 2017.
+
+    You may use this software under the terms of the GNU public license
+    (GPL).  The terms of this license are described at:
+
+     http://www.gnu.org/licenses/gpl.txt
+
+     Authors:
+             Aaron Chester
+             FRIB
+             Michigan State University
+             East Lansing, MI 48824-1321
+
+     Author note: This code is heavily based on e2sar_perf.cpp provided as 
+                  an example by the E2SAR collaboration. The source code and 
+		  lisence for the E2SAR collaboration software can be found 
+		  at: https://github.com/JeffersonLab/E2SAR
+		  --ASC 5/1/25
+*/
+
+#include "Sender.h"
 
 #include <csignal>
 #include <filesystem>
@@ -41,9 +63,17 @@ using namespace ufmt;
 
 const double MAX_FILL_PCT = 0.9;
 
-CSender* CSender::m_pInstance = nullptr;
+Sender* Sender::m_pInstance = nullptr;
 
-CSender::CSender(po::variables_map& vm) :
+/**
+ * @details
+ * Constructor will throw on error, which the caller is expected to handle. 
+ * We parse the variables map, configure the Segmenter and Load Balancer and 
+ * report the configuration. Note that your EJFAT URI must reflect whether 
+ * or not you are using the Load Balancer e.g., setting `useCP = true` in 
+ * the initialization file).
+ */
+Sender::Sender(po::variables_map& vm) :
     m_rateGbps(vm["rate"].as<float>()),
     m_dataId(vm["dataid"].as<u_int16_t>()),
     m_nEvents(vm["num"].as<size_t>()),
@@ -58,7 +88,7 @@ CSender::CSender(po::variables_map& vm) :
     //
 
     if (m_pInstance) {
-	throw std::runtime_error("CSender instance already exists!");
+	throw std::runtime_error("Sender instance already exists!");
     } else {
 	setInstance(this);
 	std::signal(SIGINT, ctrlCHandler);
@@ -155,8 +185,10 @@ CSender::CSender(po::variables_map& vm) :
     auto srcId = vm["srcid"].as<u_int32_t>();
     auto queueSize = vm["queue-size"].as<size_t>();
     
-    m_pSegmenter = std::make_unique<Segmenter>(ejfatUri, m_dataId, srcId, flags);
-    m_pEvtBufQueue = std::make_unique<boost::lockfree::queue<u_int8_t*>>(queueSize);
+    m_pSegmenter
+	= std::make_unique<Segmenter>(ejfatUri, m_dataId, srcId, flags);
+    m_pEvtBufQueue
+	= std::make_unique<boost::lockfree::queue<u_int8_t*>>(queueSize);
 
     if (m_verbose) {
 	std::cout << "----- Sender configuration -----" << std::endl;
@@ -178,14 +210,27 @@ CSender::CSender(po::variables_map& vm) :
     }
 }
 
-CSender::~CSender()
+/**
+ * @details
+ * Calls class `shutdown()` method
+ */
+Sender::~Sender()
 {
     shutdown();
 }
 
-// Event loop
+/**
+ * @details
+ * Pack multiple ring items into a single send buffer. Generally a ring item 
+ * is on the order of 100-10k bytes, but our send buffer defaults to 1 MB. 
+ * Ring items are added until the buffer is filled to at least 90% of its 
+ * capacity. We don't really care what the data looks like once we fish it 
+ * out of the source - the ring items know their size and we do a byte-by-byte
+ * copy into the event buffer. Events are numbered sequentially NOT by 
+ * timestamp!
+ */
 int
-CSender::operator()()
+Sender::operator()()
 {   
     // Convert bit rate to event rate. Sleep at least 1 us between sends:
     float eventRate{m_rateGbps*1000000000/(m_evtBufSize*8)};
@@ -203,10 +248,10 @@ CSender::operator()()
 
     // Start threads, open sockets. Start sending sync packets:
 
-    auto rv = m_pSegmenter->openAndStart();    
-    if (rv.has_error()) {
+    auto rvoas = m_pSegmenter->openAndStart();    
+    if (rvoas.has_error()) {
 	std::cerr << "Failed to start Segmenter: Error code "
-		  << rv.error().code() << " " << rv.error().message()
+		  << rvoas.error().code() << " " << rvoas.error().message()
 		  << std::endl;
         return -1;
     } else {
@@ -237,9 +282,9 @@ CSender::operator()()
     EventNum_t evtNumber = 0;  // Iterate on send
     u_int16_t  entropy = 0;    // Random
     size_t     totalBytes = 0; // Total bytes sent
-    bool       eof = false;
+    bool       done = false;
 
-    while (!eof) {
+    while (!done) {
 	auto now = boost::chrono::high_resolution_clock::now();
 	
 	if (!m_pEvtBufQueue->pop(evtBuf)) {
@@ -254,35 +299,31 @@ CSender::operator()()
 	while (currentBytes < m_maxBufBytes) {
 	    std::unique_ptr<CRingItem> pItem(m_pSource->getItem());
 	    if (!pItem.get()) {
-		eof = true;  // End of source
+		done = true;  // End of source
 		break;
 	    }
 	    uint32_t itemSize = pItem->size();
-	    if (m_debug) {
-		std::cout << "Item size " << itemSize << " bytes" << std::endl;
-	    }
 	    memcpy(p, pItem->getItemPointer(), itemSize);
 	    currentBytes += itemSize;
 	    p += itemSize; // Prepare to copy next item
 	} // End buffer packing
-
-	dumpBuffer(evtBuf, currentBytes);
 	
-	rv = m_pSegmenter->addToSendQueue(evtBuf, currentBytes, evtNumber,
-					  m_dataId, entropy);		
-	if (rv.has_error()) {
+	auto rvseg = m_pSegmenter->addToSendQueue(evtBuf, currentBytes,
+						  evtNumber, m_dataId, entropy,
+						  &senderCallback, evtBuf);
+	if (rvseg.has_error()) {
 	    std::cerr << "Failed to add to send queue: "
-		      << rv.error().message()
-		      << " with error code " << rv.error().code()
+		      << rvseg.error().message()
+		      << " with error code " << rvseg.error().code()
 		      << " trying to continue..."
 		      << std::endl;
 	    continue;
 	}
 
 	totalBytes += currentBytes;
-	m_pEvtBufQueue->push(boost::any_cast<u_int8_t*>(evtBuf));
-
+	
 	if (m_debug) {
+	    // dumpBuffer(evtBuf, currentBytes);
 	    std::cout << "Sent event:" << std::endl;
 	    std::cout << "\tevtNumber:      " << evtNumber << std::endl;
 	    std::cout << "\tdataId:         " << m_dataId << std::endl;
@@ -291,7 +332,7 @@ CSender::operator()()
 	    std::cout << "\tevtBufCapacity: " << m_evtBufSize << std::endl;
 	    std::cout << "\ttotalBytes:     " << totalBytes << std::endl;
 	}
-
+	
 	auto until = now + boost::chrono::microseconds(interEventSleepUsec);
 	if (now > until) {
 	    std::cerr << "Clock overrun, either event buffer length too "
@@ -311,10 +352,10 @@ CSender::operator()()
 	
 	evtNumber++;
 
-	// Check if we've hit a limit or EOF:
+	// Check if we've hit a send limit:
 
-	if (m_nEvents != 0 && evtNumber == m_nEvents) { eof = true; }
-
+	if (m_nEvents != 0 && evtNumber == m_nEvents) { done = true; }
+	
 	// Wait to send next event:
     
 	boost::this_thread::sleep_until(until);
@@ -350,7 +391,7 @@ CSender::operator()()
  * @note Re-raises default signal after shutdown
  */
 void
-CSender::ctrlCHandler(int sig) 
+Sender::ctrlCHandler(int sig) 
 {
     if (m_pInstance) {
 	m_pInstance->shutdown();
@@ -363,11 +404,8 @@ CSender::ctrlCHandler(int sig)
  * Private functions                                                        *
  ***************************************************************************/
 
-/**
- * @brief Shutdown the sender. Remove senders. Stop threads.
- */
 void
-CSender::shutdown()
+Sender::shutdown()
 {
     std::cout << "Stopping sender threads..." << std::endl;
     m_threadsRunning = false;
@@ -393,14 +431,8 @@ CSender::shutdown()
     boost::this_thread::sleep_for(duration);
 }
 
-/**
- * @brief Map the version we get from the command line to a factory version
- * @param vsn Format the user requested
- * @throw std::invalid_argument Bad format version
- * @return Factory version ID (from the enum)
- */
 FormatSelector::SupportedVersions
-CSender::mapVersion(int vsn)
+Sender::mapVersion(int vsn)
 {
     switch (vsn) {
     case 12:
@@ -430,7 +462,7 @@ CSender::mapVersion(int vsn)
  * needed by this program anyway to support ringbuffer data sources
  */
 DataSource*
-CSender::makeDataSource(RingItemFactoryBase* pFactory,
+Sender::makeDataSource(RingItemFactoryBase* pFactory,
 			const std::string& strUrl)
 {
     // Special case the url is just "-" then it's stdin, a file descriptor
@@ -465,4 +497,17 @@ CSender::makeDataSource(RingItemFactoryBase* pFactory,
 	msg += proto + "'";
 	throw std::invalid_argument(msg);
     }
+}
+
+void
+Sender::senderCallback(boost::any a) 
+{
+    m_pInstance->freeBuffer(a);
+}
+
+void
+Sender::freeBuffer(boost::any a) 
+{
+    auto p = boost::any_cast<u_int8_t*>(a);
+    m_pEvtBufQueue->push(p);
 }

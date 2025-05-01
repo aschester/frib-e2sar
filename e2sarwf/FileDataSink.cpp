@@ -17,11 +17,12 @@
 
 /**
  * @file FileDataSink.cpp
- * @brief Implementation of file sink.
+ * @brief Implementation of file sink
  */
 
 #include "FileDataSink.h"
 
+#include <iostream>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -34,47 +35,39 @@
 using namespace ufmt;
 
 /**
- * @brief Construct from a file descriptor
  * @details
- * Ownership of this file descriptor is transferred to the
- * this object. Write operations on the file descriptor must 
- * be permissible or an exception is thrown.
- *
- * \param fd a file descriptor to define the sink
- * \throw std::string
+ * Ownership of this file descriptor is transferred to the this object. 
+ * Write operations on the file descriptor must be permissible or an 
+ * exception is thrown.
  */
-FileDataSink::FileDataSink(int fd)
-    : m_fd(fd)
+FileDataSink::FileDataSink(int fd) :
+    m_fd(fd)
 {
     if (!isWritable()) {
 	throw std::string("FileDataSink::FileDataSink(int) file descriptor "
-			  "is not write only");
+			  "is not writeable");
     }
 }
 
 
 /** 
- * @brief Construct from a file name
  * @details
  * Obtains a file descriptor given a valid pathname. If file doesn't exist
  * a new file is opened with RDWR permissions. If the file exists, its contents
  * are overwritten.
- *
- * @param fname A file descriptor to define the sink
- *
- * @throw int On failure opening file
- * @throw std::string If file is not writable
- *
- * @todo: Open failures might be best signalled with CErrnoException or,
- *        if not, the string should at least have strerror in it for the
- *        errno so the user can know why the file could not be opened.
+ * @todo (????): Open failures might be best signalled with CErrnoException or,
+ * if not, the string should at least have strerror in it for the errno so the 
+ * user can know why the file could not be opened.
  */
-FileDataSink::FileDataSink(std::string fname)
-    : m_fd(-1)
+FileDataSink::FileDataSink(std::string fname) :
+    m_fd(-1)
 {
-    // Open or create if the file doesn't exist
+    // Open or create if the file doesn't exist:
+    
     m_fd = open(fname.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-    // check to see if failed
+
+    // Check to see if failed:
+    
     if (m_fd == -1) {
 	std::string errmsg("FileDataSink::FileDataSink(std::string)");
 	errmsg += " failed to open file ";
@@ -90,49 +83,39 @@ FileDataSink::FileDataSink(std::string fname)
 
 /**
  * @details
- * If the file descriptor does not refer to STDOUT_FILENO and
- * and it points to a valid file, then close it.
+ * If the file descriptor does not refer to STDOUT_FILENO and it points to 
+ * a valid file, then close it.
  */
 FileDataSink::~FileDataSink()
 {
-    // Can't close stdout
-    if (m_fd!=STDOUT_FILENO && m_fd>0) {
+    // Can't close stdout:
+    
+    if (m_fd != STDOUT_FILENO && m_fd > 0) {
 	close(m_fd);
     }
 }
 
 /**
- * putItem
- * @brief Write ring item to the sink
  * @details
- * Writes the data to the file. This delegates the writing to
- * a static function fmtio::writeData(int,void*,int).
- *
- * @param item Refers to a CRingItem that contains the data
- *
- * @throw CErrnoException When io failure
+ * Writes the data to the file. This delegates the writing to a static function
+ * `fmtio::writeData(int, void*, int)` via `put(void*, size_t)`.
  */
 void
 FileDataSink::putItem(const CRingItem& item)
 {
-    // Get the underlying structure containing the state 
+    // Get the underlying structure containing the state:
+    
     const RingItem* pItem = item.getItemPointer();
 
-    // Set up variable for writing it to stream
+    // Set up variable for writing it to stream:
+    
     put(pItem, item.size());
 }
 
 /**
- * put
- * @brief Puts an arbitrary chunk of data to the sink (file)
- * 
- * @param pData  Pointer to the buffer containing the data.
- * @param nBytes Number of bytes of data to put.
- *
- * @note the underlying implemenation is just fmtio::writeData. It's int 
- * exception is converted to an errno exception
- *
- * @throw CErrnoException
+ * @note The underlying implemenation is just
+ * `fmtio::writeData(int, void*, int)`. It's int exception is converted to 
+ * an errno exception
  */
 void
 FileDataSink::put(const void* pData, size_t nBytes)
@@ -148,6 +131,11 @@ FileDataSink::put(const void* pData, size_t nBytes)
     }
 }
 
+/**
+ * @note The underlying implemenation is just 
+ * `fmtio::writeDataVUnlimited(int, void*, int)`. It's int exception is 
+ * converted to  an errno exception.
+ */
 void
 FileDataSink::putV(iovec* iovs, size_t iovcnt)
 {
@@ -170,11 +158,6 @@ void FileDataSink::flush()
     }
 }
 
-/**
- * @brief Check if write operates are allowed on file
- *
- * @throw CErrnoException if fcntl failed while checking
- */
 bool
 FileDataSink::isWritable() 
 {

@@ -10,6 +10,7 @@
      Authors:
              Ron Fox
              Giordano Cerriza
+	     Aaron Chester
 	     FRIB
 	     Michigan State University
 	     East Lansing, MI 48824-1321
@@ -17,7 +18,7 @@
 
 /** 
  * @file  StreamDataSource.h
- * @brief Defines a class that gets ring items from a stream.
+ * @brief Defines a class that gets ring items from a stream
  */
 
 #ifndef STREAMDATASOURCE_H
@@ -39,18 +40,18 @@ private:
     std::istream& m_str; //!< Stream name to read ring items from.
 public:
     /** 
-     * @brief Constructor. 
-     * @param pFactory Pointer to the ring item factory.
-     * @param str References the stream from which to get ring items.
+     * @brief Constructor
+     * @param pFactory Pointer to the ring item factory
+     * @param str References the stream from which to get ring items
      */
     StreamDataSource(ufmt::RingItemFactoryBase* pFactory, std::istream& str);
-    /** @brief Destructor. */
+    /** @brief Destructor */
     virtual ~StreamDataSource();
     /** 
      * @brief Get a ring item from the soruce. Implementation of the mandatory 
      * interface from the base class.
-     * @return Pointer to the next ring item from the stream.
-     * @retval nullptr If none.
+     * @return Pointer to the next ring item from the stream
+     * @retval nullptr If none
      */
     virtual ufmt::CRingItem* getItem();
 };

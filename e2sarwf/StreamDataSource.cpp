@@ -10,6 +10,7 @@
      Authors:
              Ron Fox
              Giordano Cerriza
+	     Aaron Chester
 	     FRIB
 	     Michigan State University
 	     East Lansing, MI 48824-1321
@@ -26,9 +27,8 @@
 
 using namespace ufmt;
 
-StreamDataSource::StreamDataSource(
-    RingItemFactoryBase* pFactory, std::istream& str
-    ) :
+StreamDataSource::StreamDataSource(RingItemFactoryBase* pFactory,
+				   std::istream& str) :
     DataSource(pFactory), m_str(str)
 {}
 
