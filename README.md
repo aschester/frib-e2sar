@@ -90,3 +90,4 @@ Once the proper number of end runs is seen, the event-building pipeline and even
 - Ensure that useCP is set to the same value in both the segmenter and reassembler configuration files.
 - Pipeline configuration is entirely hardcoded, so be cautious when changing e.g., ringbuffer names.
 - In "most" cases the pipeline can safely shut itself down when it encounters and error. Ctrl-C (SIGINT) will be propagated to all child processes and is generally the safest way to exit the python scripts. In some cases hanging processes must be killed on the command line. Most likely this is going to be a stray ringFragmentSource.
+- As of 5/6/25 the contents of the `scripts` folder are largely outdated, though it does provide a framework for recussitating the event-building features of the workflow if needed.
