@@ -1,0 +1,3 @@
+[submodule "UnifiedFormat"]
+	path = UnifiedFormat
+	url = https://github.com/FRIBDAQ/UnifiedFormat.git
