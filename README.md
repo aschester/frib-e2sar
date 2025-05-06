@@ -8,16 +8,15 @@ This document is not intended as a comprehensive user's manual for this project,
 
 - E2SAR software and prereqs (https://github.com/JeffersonLab/E2SAR/wiki/Code-and-Binaries)
 - NSCLDAQ 12.1 or later
-- FRIB unified format library 2.2-004 or later
 - CMake 3.18
 - Compiler support for C++17 standard
 
-A Docker image based on Debian 11 (Bullseye) with preinstalled E2SAR binaries and prereqs is available here: https://hub.docker.com/r/aschester/e2sar-bullseye. The Docker image can be used to build images with Apptainer, Shifter, etc.
+A Docker image based on Debian 11 (Bullseye) with preinstalled E2SAR binaries and prereqs is available here: https://hub.docker.com/r/aschester/e2sar-bullseye. The Docker image can be used to build images with Apptainer, Shifter, etc. The project will incorporate its own Unified Format Library as a submodule though you can override this choice using the UFMT_ROOT compile option.
 
 ## Building the codes
 
 - Clone the repository from https://github.com/aschester/frib-e2sar.git
-- Configure the environment in the container by sourcing some NSCLDAQ 12.1 with ufmt library installed at $DAQROOT/unifiedformat or use the UFMT environment variable to point to broken-out ufmt library 2.2-004 or later.
+- Configure the environment in the container by sourcing some NSCLDAQ 12.1 compiled under the same image containing the E2SAR dependencies.
 - Build the project using CMake:
 
 ```
