@@ -48,18 +48,20 @@ set(NSCLDAQ_INC "${NSCLDAQ_ROOT}/include" CACHE STRING "NSCLDAQ include dir")
 set(NSCLDAQ_LIB "${NSCLDAQ_ROOT}/lib" CACHE STRING "NSCLDAQ lib dir")
 message(STATUS "Using NSLCDAQ: ${NSCLDAQ_ROOT}")
 
-set(UFMT_ROOT "_" CACHE STRING "Path to unified format library installation")
-set(UFMT_INC "${UFMT_ROOT}/include" CACHE STRING "Unified format include dir")
-set(UFMT_LIB "${UFMT_ROOT}/lib" CACHE STRING "Unified format lib dir")
+set(UFMT_INC
+  ${CMAKE_BINARY_DIR}
+  ${CMAKE_SOURCE_DIR}/UnifiedFormat
+  ${CMAKE_SOURCE_DIR}/UnifiedFormat/abstract
+  CACHE STRING "Unified format include dirs"
+  )
 set(UFMT_LIBS
-  ${UFMT_LIB}/libNSCLDAQFormat.so
-  ${UFMT_LIB}/libV10Format.so
-  ${UFMT_LIB}/libV11Format.so
-  ${UFMT_LIB}/libV12Format.so
-  ${UFMT_LIB}/libAbstractFormat.so
+  ${CMAKE_BINARY_DIR}/UnifiedFormat/libNSCLDAQFormat.so
+  ${CMAKE_BINARY_DIR}/UnifiedFormat/v10/libV10Format.so
+  ${CMAKE_BINARY_DIR}/UnifiedFormat/v11/libV11Format.so
+  ${CMAKE_BINARY_DIR}/UnifiedFormat/v12/libV12Format.so
+  ${CMAKE_BINARY_DIR}/UnifiedFormat/abstract/libAbstractFormat.so
   CACHE STRING "Unified format libs"
   )
-message(STATUS "Using NSCLDAQ unified format: ${UFMT_ROOT}")
 
 ###########################################################################
 # Build and install:

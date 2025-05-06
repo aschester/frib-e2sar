@@ -1,4 +1,4 @@
-set(CMAKE_INSTALL_RPATH ${UFMT_LIB} ${NSCLDAQ_LIB} ${CMAKE_INSTALL_PREFIX}/lib)
+set(CMAKE_INSTALL_RPATH ${NSCLDAQ_LIB} ${CMAKE_INSTALL_PREFIX}/lib)
 
 ###########################################################################
 # Common includes/libs:
@@ -8,7 +8,6 @@ set(common_includes
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${UFMT_INC}
   ${NSCLDAQ_INC}
-  ${CMAKE_SOURCE_DIR}/utils
   )
 set(common_libs
   ${PROJECT_LIBS}

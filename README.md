@@ -8,17 +8,16 @@ This document is not intended as a comprehensive user's manual for this project,
 
 - E2SAR software and prereqs (https://github.com/JeffersonLab/E2SAR/wiki/Code-and-Binaries)
 - NSCLDAQ 12.1 or later
-- Unified Format Library 2.2-006 or later
+- Unified Format Library 2.2-007 or later
 - CMake 3.18
 - Compiler support for C++17 standard
 
-A Docker image based on Debian 11 (Bullseye) with preinstalled E2SAR binaries and prereqs is available here: https://hub.docker.com/r/aschester/e2sar-bullseye. The Docker image can be used to build images with Apptainer, Shifter, etc. The project will incorporate its own Unified Format Library as a submodule though you can override this choice using the UFMT_ROOT compile option.
+A Docker image based on Debian 11 (Bullseye) with preinstalled E2SAR binaries and prereqs is available here: https://hub.docker.com/r/aschester/e2sar-bullseye. The Docker image can be used to build images with Apptainer, Shifter, etc. The project will incorporate its own Unified Format Library as a git submodule.
 
 ## Building the codes
 
 - Clone the repository from https://github.com/aschester/frib-e2sar.git.
-- Ensure the submodules are initialized properly by running the commands `git submodule init` and `git submodule update`. One can ensure the submodules are initialized properly by cloning the project via `git clone --recurse submodules ...` as well.
-- Configure the environment in the container by sourcing some NSCLDAQ 12.1 compiled under the same image containing the E2SAR dependencies.
+- Ensure the Unified Format Library submodule is initialized properly by running the commands `git submodule init` and `git submodule update`. One can ensure the submodules are initialized properly by cloning the project via `git clone --recurse submodules ...` as well.
 - Build the project using CMake:
 
 ```
@@ -33,7 +32,7 @@ You can override the default unified format path by setting an alternative durin
 The install directory contians five (5) folders:
 - bin/     : contains project binaries
 - include/ : contains project headers
-- lib/     : contains project libraries, for now libEjfatIO.so, which provides unified format compliant data sources and sinks. It is unused for the time being but its trivial to build and may be of some use later. Who knows.
+- lib/     : contains project libraries, including those for the Unified Format subproject
 - ini/     : example initialization files for the Segmenter and Reassembler
 - scripts/ : scripts to setup and run the FRIB event-building pipeline (DEPRECATED 5/6/25)
 
