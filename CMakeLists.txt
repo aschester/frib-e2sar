@@ -48,11 +48,7 @@ set(NSCLDAQ_INC "${NSCLDAQ_ROOT}/include" CACHE STRING "NSCLDAQ include dir")
 set(NSCLDAQ_LIB "${NSCLDAQ_ROOT}/lib" CACHE STRING "NSCLDAQ lib dir")
 message(STATUS "Using NSLCDAQ: ${NSCLDAQ_ROOT}")
 
-# Use ufmt from NSCLDAQ installation directory. This ufmt does not have
-# ringbuffer support:
-set(UFMT_ROOT "${NSCLDAQ_ROOT}/unifiedformat"
-  CACHE STRING "Path to unified format library installation"
-  )
+set(UFMT_ROOT "_" CACHE STRING "Path to unified format library installation")
 set(UFMT_INC "${UFMT_ROOT}/include" CACHE STRING "Unified format include dir")
 set(UFMT_LIB "${UFMT_ROOT}/lib" CACHE STRING "Unified format lib dir")
 set(UFMT_LIBS
@@ -70,10 +66,11 @@ message(STATUS "Using NSCLDAQ unified format: ${UFMT_ROOT}")
 ##
 
 # -Wall shows a lot of warnings from e.g. NSCLDAQ which we suppress.
-add_compile_options(-g -Og # -Wall
+add_compile_options(-g -O2 #-Wall
   )
 
 # Installation for subdirs handled in their own CMakeList.txt:
+add_subdirectory(UnifiedFormat)
 add_subdirectory(checkdefaults)
 add_subdirectory(e2sarwf)
 add_subdirectory(docs)

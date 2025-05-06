@@ -17,6 +17,6 @@ rm -rf build
 
 (mkdir build ;
  cd build ;
- cmake .. -DNSCLDAQ_ROOT=$DAQROOT -DUFMT_ROOT=/usr/opt/daqformat/2.2-dev -DCMAKE_INSTALL_PREFIX=$prefix ;
- cmake --build . -j4 ;
+ cmake .. -DNSCLDAQ_ROOT=$DAQROOT -DCMAKE_INSTALL_PREFIX=$prefix ;
+ cmake --build . ;
  cmake --install .)
