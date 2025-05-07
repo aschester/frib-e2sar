@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Project info:
 ##
 
-project(FRIB_E2SAR VERSION 0.0.1
+project(FRIB_E2SAR VERSION 0.1.0
   DESCRIPTION "FRIB-E2SAR data processing"
   LANGUAGES CXX
   )
