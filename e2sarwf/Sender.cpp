@@ -202,7 +202,11 @@ Sender::Sender(po::variables_map& vm) :
 	std::cout << "----- Sender configuration -----" << std::endl;
 	printSegmenterFlags(flags);
 	std::cout << "Using URI:   " << ejfatUri.to_string() << std::endl;
-	std::cout << "Sending:     " << m_nEvents << " events" << std::endl;
+	if (m_nEvents > 0) {
+	    std::cout << "Sending:     " << m_nEvents << " events" << std::endl;
+	} else {
+	    std::cout << "Sending:     all events" << std::endl;
+	}
 	std::cout << "Data ID:     " << m_dataId << std::endl;
 	std::cout << "Source ID:   " << srcId << std::endl;
 	std::cout << "evtBufSize:  " << m_evtBufSize << " bytes" << std::endl;

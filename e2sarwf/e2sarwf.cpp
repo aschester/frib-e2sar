@@ -111,8 +111,8 @@ main(int argc, char* argv[])
 	 "event buffer size in bytes [s]");
     opts("uri,u", po::value<std::string>()->default_value(""),
 	 "specify EJFAT_URI on the command-line instead of the envvar");
-    opts("num,n", po::value<size_t>()->default_value(10),
-	 "number of event buffers to send [s]");
+    opts("num,n", po::value<size_t>()->default_value(0),
+	 "number of event buffers to send (0 send all data) [s]");
     opts("enum,e", po::value<EventNum_t>()->default_value(0),
 	 "starting event number [s]");
     opts("srcid", po::value<u_int32_t>()->default_value(0),
