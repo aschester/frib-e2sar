@@ -17,7 +17,7 @@
 
 /**
  * @file RingDataSink.h
- * @brief Define a ringbuffer data sink for NSCLDAQ dataflow.
+ * @brief Define a ringbuffer data sink for NSCLDAQ dataflow
  */
 
 #ifndef RINGDATASINK_H
@@ -31,7 +31,7 @@ class CRingBuffer;
 
 /**
  * @class RingDataSink
- * @brief Ringbuffer data sink for NSCLDAQ dataflows.
+ * @brief Ringbuffer data sink for NSCLDAQ dataflows
  */
 
 class RingDataSink : public DataSink

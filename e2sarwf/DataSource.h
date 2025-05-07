@@ -36,11 +36,11 @@ namespace ufmt {
  * Pure abstract data source to provide ring items from a data source using a 
  * ring item factory. We'll also need some concrete classes:
  * - FdDataSource: give data from a file descriptor.
+ * - RingDataSource: give data from a ringbuffer.
  * - StreamDataSource: give data from a stream.
- * @note Neither of these data sources supports reading directly from a ring 
- * buffer, as the format library is possibly unaware of those NSCLDAQ classes.
- * To read data from a ringbuffer you can create a file descriptor data 
- * source and read data from stdin i.e. `ringselector | send -s -`.
+ * @note This requires a version of the ufmt library which is compiled against 
+ * NSCLDAQ - we incorp ufmt as part of the build and build it against the 
+ * build's NSCLDAQ_ROOT.
  */
 
 class DataSource {
@@ -49,11 +49,11 @@ protected:
     
 public:
     /** 
-     * @brief Constructor.
-     * @param pFactory Pointer to concrete ring item factory.
+     * @brief Constructor
+     * @param pFactory Pointer to concrete ring item factory
      */
     DataSource(ufmt::RingItemFactoryBase* pFactory);
-    /** @brief Destructor. */
+    /** @brief Destructor */
     virtual ~DataSource() = default;
     /** 
      * @brief Pure-virtual method to access a ring item from the data source 

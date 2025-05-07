@@ -45,8 +45,6 @@ using namespace e2sar;
 /** @todo (ASC 4/25/25): Handle signals without singletons? This implementation
  * is mostly hidden away. We only expect one instance of a sender or receiver 
  * but this is only very loosely enforced. */
-/** @todo (ASC 4/29/25): Construct sender, receiver from config object */
-/** @todo (ASC 4/29/25): Incorp own version of ufmt >= 2.2-006 */
 
 /**
  * @brief Check if two cmdline options confict
@@ -56,7 +54,9 @@ using namespace e2sar;
  * @throw std::logic_error If the two options cannot be used simultaneously
  */
 void
-conflicting_options(const po::variables_map &vm, const std::string &opt1, const std::string &opt2)
+conflicting_options(const po::variables_map &vm,
+		    const std::string &opt1,
+		    const std::string &opt2)
 {
     if (vm.count(opt1) && !vm[opt1].defaulted()
 	&& vm.count(opt2) && !vm[opt2].defaulted()) {
@@ -72,7 +72,9 @@ conflicting_options(const po::variables_map &vm, const std::string &opt1, const 
  * @param opt2 Second cmdline option
  * @throw std::logic_error If a dependency exists but is not satisfied
  */
-void option_dependency(const po::variables_map &vm, const std::string &for_what, const std::string &required_option)
+void option_dependency(const po::variables_map &vm,
+		       const std::string &for_what,
+		       const std::string &required_option)
 {
     if (vm.count(for_what) && !vm[for_what].defaulted())
         if (vm.count(required_option) == 0)
@@ -143,6 +145,7 @@ main(int argc, char* argv[])
 	 "a list of optimizations to turn on [s]");
 
     // Additions to base options:
+    
     std::string cwd = std::filesystem::current_path();
     opts("nscldaq-version,v", po::value<int>()->default_value(12),
 	 "NSCLDAQ data format major version number [s,r]");

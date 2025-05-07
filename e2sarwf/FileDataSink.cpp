@@ -17,7 +17,7 @@
 
 /**
  * @file FileDataSink.cpp
- * @brief Implementation of file sink
+ * @brief Implementation of the file sink
  */
 
 #include "FileDataSink.h"

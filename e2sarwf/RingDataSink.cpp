@@ -8,11 +8,17 @@
      http://www.gnu.org/licenses/gpl.txt
 
      Author:
-             Jeromy Tompkins 
-	     NSCL
+             Jeromy Tompkins
+	     Aaron Chester
+	     NSCL/FRIB
 	     Michigan State University
 	     East Lansing, MI 48824-1321
 */
+
+/**
+ * @file RingDataSink.cpp
+ * @brief Implement the ringbuffer sink
+ */
 
 #include "RingDataSink.h"
 
@@ -21,8 +27,9 @@
 #include <sys/uio.h>
 
 #include <DataFormat.h>
-#include <CRingBuffer.h>
 #include <CRingItem.h>
+
+#include <CRingBuffer.h>
 
 using namespace ufmt;
 
@@ -36,7 +43,7 @@ RingDataSink::RingDataSink(std::string ringName)
 RingDataSink::~RingDataSink()
 {
     delete m_pRing;
-    m_pRing=nullptr;
+    m_pRing = nullptr;
 }
 
 /**

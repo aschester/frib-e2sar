@@ -49,8 +49,8 @@ public:
     FileDataSink (int fd);
     /**
      * @brief Construct from a file name
-     * @param fname A file descriptor to define the sink *
-     * @throw int On failure opening file
+     * @param fname A file descriptor to define the sink
+     * @throw CErrnoException On failure opening file
      * @throw std::string If file is not writable
      */
     FileDataSink (std::string pathname);
@@ -92,7 +92,8 @@ public:
 private:
     /**
      * @brief Check if write operates are allowed on file
-     * @throw CErrnoException if fcntl failed while checking
+     * @throw CErrnoException if fcntl failed while checking file status
+     * @return True if the file is writeable, false otherwise
      */
     bool isWritable();
 

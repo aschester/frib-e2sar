@@ -16,9 +16,8 @@
 
 /** 
  * @file FribEjfatUtils.h
- * @brief Define some useful functions for E2SAR processing
- * @details
- * Functions exist in the frib_e2sar namespace
+ * @brief Define some useful functions for E2SAR processing and a namespace 
+ * they can reside in
  */
 
 #ifndef FRIBE2SARUTILS_H

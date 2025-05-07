@@ -19,10 +19,10 @@ set(common_libs
 
 set(exec e2sarwf)
 set(src
-  e2sarwf.cpp Sender.cpp Receiver.cpp FribE2sarUtils.cpp DataSource.cpp FdDataSource.cpp StreamDataSource.cpp DataSink.cpp FileDataSink.cpp RingDataSink.cpp
+  e2sarwf.cpp Sender.cpp Receiver.cpp FribE2sarUtils.cpp DataSource.cpp RingDataSource.cpp FdDataSource.cpp StreamDataSource.cpp DataSink.cpp FileDataSink.cpp RingDataSink.cpp
   )
 set(headers
-  Sender.h Receiver.h FribE2sarUtils.h DataSource.h FdDataSource.h StreamDataSource.h DataSink.h FileDataSink.h RingDataSink.h
+  Sender.h Receiver.h FribE2sarUtils.h DataSource.h FdDataSource.h RingDataSource.h StreamDataSource.h DataSink.h FileDataSink.h RingDataSink.h
   )
 add_executable(${exec} ${src})
 target_include_directories(${exec} PRIVATE ${common_includes})

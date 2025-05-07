@@ -12,6 +12,12 @@
              FRIB
              Michigan State University
              East Lansing, MI 48824-1321
+
+     Author note: This code is heavily based on e2sar_perf.cpp provided as 
+                  an example by the E2SAR collaboration. The source code and 
+		  lisence for the E2SAR collaboration software can be found 
+		  at: https://github.com/JeffersonLab/E2SAR
+		  --ASC 5/1/25
 */
 
 /**
@@ -45,13 +51,12 @@ namespace po = boost::program_options;
  * @class Sender
  * @brief Send data through EJFAT/E2SAR.
  * @details 
- * This class is intended to be used as a functor to send data through
- * EJFAT/E2SAR. The event loop runs inside `operator()`. Configuration 
- * of the object is handled through the constructor. The static methods 
- * `setInstance()` and `ctrlCHandler()` exist to allow safe shutdown on 
- * SIGINT and in general should not be considered part of the public 
- * interface to this class. 
-*/
+ * This class defines a functor to send data through EJFAT/E2SAR. The event 
+ * loop runs inside the class' `operator()`. Configuration of the object is 
+ * handled through the constructor. The static methods `setInstance()` and 
+ * `ctrlCHandler()` exist to allow safe shutdown on SIGINT and in general 
+ * should not be considered part of the public interface to this class. 
+ */
 
 class Sender
 {    
@@ -59,7 +64,7 @@ private:
     float m_rateGbps;      //!< Send rate in Gbps
     u_int16_t m_dataId;    //!< Data Id
     size_t m_nEvents;      //!< Number of events to send (0 until eof or SIGINT)
-    size_t m_evtBufSize;   //!< Send buffer size (bytes)
+    size_t m_evtBufSize;   //!< Send buffer size in bytes
     size_t m_maxBufBytes;  //!< Max bytes to fill before sending
     bool m_threadsRunning; //!< True when send loop is active
     bool m_debug;          //!< Output debugging information
@@ -72,7 +77,7 @@ private:
     /** Buffer queue to recycle send buffers */
     std::unique_ptr<boost::lockfree::queue<u_int8_t*>> m_pEvtBufQueue;
 
-    static Sender* m_pInstance; //!< Weak singleton for handling OS signals
+    static Sender* m_pInstance; //!< Instance for handling signals
     
 public:
     /**
@@ -93,23 +98,27 @@ public:
      * @brief Run the event loop
      * @return int
      * @retval 0 Success
-     * @retval -1 Failure with contextual error message on stderr
+     * @retval -1 Failure (hopefully with contextual error message on stderr)
      */
     int operator()();
 
     /**
-     * @brief Set instance for handler
-     * @param s Pointer to instance
-     */ 
-    static void setInstance(Sender* s) { m_pInstance = s; };
-    /**
-     * @brief Handle Ctrl-C interrupt and shutdown safely
+     * @brief Part of the signal-handling interface: handle Ctrl-C interrupt 
+     * and shutdown safely
      * @param sig Signal to handle (expected to be SIGINT)
-     * @note Re-raises default signal after shutdown
+     * @note (ASC 5/6/25): This method must be a static method with C linkage 
+     * but should be considered, practically speaking, internal to the class 
+     * itself. It uses the singleton-like instance variable to call the class' 
+     * shutdown method. Not recommended to call this method externally.
      */ 
     static void ctrlCHandler(int sig);
 
 private:
+    /**
+     * @brief Part of the signal-handling interface: set instance for handler
+     * @param s Pointer to instance
+     */ 
+    static void setInstance(Sender* s) { m_pInstance = s; };
     /** @brief Shutdown the sender. Remove senders. Stop threads. */
     void shutdown();
     /**
@@ -125,12 +134,10 @@ private:
      * DataSource given all that
      * @param pFactory Pointer to the ring item factory to use
      * @param strUrl   String URI of the connection
-     * @throw std::invalid_argument If a ringbuffer data source is requested
+     * @throw std::invalid_argument Unknown source protocol
+     * @throw std::invalid_argument Cannot open file data source
+     * @throw CException Cannot create ringbuffer data source
      * @return Dynamically allocated data source
-     * @note (ASC 11/19/24): Ringbuffer data sources are not currently 
-     * supported. If needed, create a pipe to read from stdin.
-     * @todo (ASC 4/28/25): ufmt as submodule can be built against NSCLDAQ 
-     * version needed by this program anyway to support ringbuffer data sources
      */
     DataSource* makeDataSource(ufmt::RingItemFactoryBase* pFactory,
 			       const std::string& strUrl);
@@ -138,6 +145,9 @@ private:
      * @brief Static callback function for Segmenter non-blocking send using 
      * `addToSendQueue()`
      * @param a Buffer to return to the queue
+     * @note (ASC 5/6/25): Static with C linkage to satisfy callback 
+     * requirements. Possibly some std::bind business can avoid using the 
+     * instance pointer?
      */
     static void senderCallback(boost::any a);
     /** 

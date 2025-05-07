@@ -58,7 +58,8 @@ namespace frib_e2sar {
     }
 
     /** 
-     * @note Failure to create a valid URI is fatal
+     * @details 
+     * Failure to create a valid URI is fatal.
      */
     e2sar::EjfatURI
     getUri(const std::string uri, const e2sar::EjfatURI::TokenType& tt,
@@ -109,6 +110,12 @@ namespace frib_e2sar {
 	return flags;
     }
 
+    /**
+     * @details
+     * The `withLBHeader` flag is set to !useCP in this function. 
+     * If you attempt to set this flag set in the initialization file, 
+     * that value will be ignored.
+     */
     e2sar::Reassembler::ReassemblerFlags
     getReassemblerFlagsFromFile(std::string fname)
     {

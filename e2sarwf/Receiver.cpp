@@ -112,7 +112,8 @@ Receiver::Receiver(po::variables_map& vm) :
     auto deqThreads = vm["deq"].as<size_t>();     // Dequeue/read
 
     ip::address ip = ip::make_address(ip_s);    
-    m_pReassembler = std::make_unique<Reassembler>(ejfatUri, ip, port, numThreads, flags);
+    m_pReassembler
+	= std::make_unique<Reassembler>(ejfatUri, ip, port, numThreads, flags);
     
     if (m_verbose) {
 	std::cout << "----- Receiver configuration -----" << std::endl;
@@ -140,7 +141,7 @@ Receiver::operator()()
     for (size_t i = 0; i < m_deqThreads; i++) {
 	std::unique_ptr<DataSink> pSink(makeDataSink(i));
 	boost::thread t(
-	    std::bind(&Receiver::receiveEvents, this, i, pSink.get())
+	    std::bind(&Receiver::receiveEvents, this, pSink.get())
 	    );
 	threads.push_back(std::move(t));
 	sinks.push_back(std::move(pSink));
@@ -154,9 +155,8 @@ Receiver::operator()()
 }
 
 /**
- * @brief Handle Ctrl-C interrupt and shutdown safely
- * @param sig Signal to handle (expected to be SIGINT)
- * @note Re-raises default signal after shutdown
+ * @details 
+ * Re-raises default signal after shutdown
  */
 void
 Receiver::ctrlCHandler(int sig) 
@@ -172,9 +172,6 @@ Receiver::ctrlCHandler(int sig)
  * Private functions                                                        *
  ***************************************************************************/
 
-/**
- * @brief Shutdown the receiver. Deregister workers. Stop threads.
- */
 void
 Receiver::shutdown()
 {
@@ -196,12 +193,6 @@ Receiver::shutdown()
     boost::this_thread::sleep_for(duration);
 }
 
-/**
- * @brief Map the version we get from the command line to a factory version
- * @param vsn Format the user requested
- * @throw std::invalid_argument Bad format version
- * @return Factory version ID (from the enum)
- */
 FormatSelector::SupportedVersions
 Receiver::mapVersion(int vsn)
 {
@@ -217,6 +208,12 @@ Receiver::mapVersion(int vsn)
     }
 }
 
+/**
+ * @details
+ * Typically to be called as part of a monitoring thread. There is no 
+ * signaling mechanism between threads: requires m_threadsRunning == true 
+ * when the caller thread starts or there is no output.
+ */
 void
 Receiver::statsThread()
 {    
@@ -276,6 +273,13 @@ Receiver::statsThread()
     }  
 }
 
+/** 
+ * @details 
+ * Per E2SAR collaboration: If we switch the order of `registerWorker?()` and 
+ * `openAndStart()` you get into a race condition where the sendState thread 
+ * starts and tries to send queue updates, however the session token is not 
+ * yet available...
+ */
 int
 Receiver::prepareToReceive()
 {
@@ -302,8 +306,6 @@ Receiver::prepareToReceive()
     }
 
     boost::this_thread::sleep_for(boost::chrono::seconds(1));
-
-    /** @note (E2SAR collab.): If we switch the order of registerWorker and openAndStart you get into a race condition where the sendState thread starts and tries to send queue updates, however the session token is not yet available... */
     
     auto rvoas = m_pReassembler->openAndStart();
     if (rvoas.has_error()) {
@@ -316,7 +318,7 @@ Receiver::prepareToReceive()
 }
 
 int
-Receiver::receiveEvents(size_t threadNum, DataSink* pSink)
+Receiver::receiveEvents(DataSink* pSink)
 {
     // Received event information and receiver config. The extent of good
     // data for a particular event is defined by evtBufSize.
@@ -370,6 +372,11 @@ Receiver::receiveEvents(size_t threadNum, DataSink* pSink)
     return 0;
 }
 
+/**
+ * @details
+ * Creates iovecs of data and calls the sink's `putV()` method to do the 
+ * actual write.
+ */
 void
 Receiver::write(void* pData, size_t nBytes, DataSink* pSink)
 {
@@ -416,22 +423,12 @@ Receiver::makeSinkUri(size_t threadNum)
     return std::string(uri);
 }
 
-/**
- * @brief Return the size of the item
- * @param pData Pointer to a ring item
- * @return Number of bytes in that item
- */
 size_t
 Receiver::itemSize(void* pData)
 {
     return static_cast<RingItemHeader*>(pData)->s_size;
 }
 
-/**
- * @brief Get pointer to beginning of next item
- * @param pData Pointer to data block
- * @return void* Pointer to the next item in the block
- */
 void*
 Receiver::nextItem(void* pData)
 {
@@ -442,12 +439,6 @@ Receiver::nextItem(void* pData)
     return p;
 }
 
-/**
- * @brief Count the number of items in a block of data
- * @param pData Pointer to the data
- * @param nBytes Number of bytes in the block
- * @return Number of items in the block
- */
 size_t
 Receiver::countRingItems(void* pData, size_t nBytes)
 {

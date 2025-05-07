@@ -20,6 +20,11 @@
 		  --ASC 5/1/25
 */
 
+/**
+ * @file Sender.cpp
+ * @brief Implementation of the Sender class
+ */
+
 #include "Sender.h"
 
 #include <csignal>
@@ -49,11 +54,14 @@
 // Other NSCLDAQ includes:
 
 #include <URL.h>
+#include <CRemoteAccess.h>
+#include <CRingBuffer.h>
 
 // Project headers:
 
 #include "FribE2sarUtils.h"
 #include "DataSource.h"
+#include "RingDataSource.h"
 #include "FdDataSource.h"
 #include "StreamDataSource.h"
 
@@ -67,11 +75,11 @@ Sender* Sender::m_pInstance = nullptr;
 
 /**
  * @details
- * Constructor will throw on error, which the caller is expected to handle. 
+ * Constructor throws on error, which the caller is expected to handle. 
  * We parse the variables map, configure the Segmenter and Load Balancer and 
  * report the configuration. Note that your EJFAT URI must reflect whether 
  * or not you are using the Load Balancer e.g., setting `useCP = true` in 
- * the initialization file).
+ * the initialization file.
  */
 Sender::Sender(po::variables_map& vm) :
     m_rateGbps(vm["rate"].as<float>()),
@@ -386,9 +394,8 @@ Sender::operator()()
 }
 
 /**
- * @brief Handle Ctrl-C interrupt and shutdown safely
- * @param sig Signal to handle (expected to be SIGINT)
- * @note Re-raises default signal after shutdown
+ * @details 
+ * Re-raises default signal after shutdown
  */
 void
 Sender::ctrlCHandler(int sig) 
@@ -446,21 +453,6 @@ Sender::mapVersion(int vsn)
     }
 }
 
-/**
- * @brief Parse the URI of the source and based on the parse create the 
- * underlying connection. Create the correct concrete instance of DataSource 
- * given all that
- * @param pFactory Pointer to the ring item factory to use
- * @param strUrl   String URI of the connection
- * @throw std::invalid_argument If a ringbuffer data source is requested.
- * The unified format library is incorporated into NSCLDAQ, but does
- * not have NSCLDAQ support enabled as it is installed first.
- * @return Dynamically allocated data source
- * @note (ASC 11/19/24): Ringbuffer data sources are not currently supported.
- * If needed, create a pipe to read from stdin.
- * @todo (ASC 4/28/25): ufmt as submodule can be built against NSCLDAQ version 
- * needed by this program anyway to support ringbuffer data sources
- */
 DataSource*
 Sender::makeDataSource(RingItemFactoryBase* pFactory,
 			const std::string& strUrl)
@@ -476,12 +468,8 @@ Sender::makeDataSource(RingItemFactoryBase* pFactory,
     std::string proto = uri.getProto();
     
     if (proto == "tcp" || proto == "ring") {
-	std::string msg(
-	    "Ringbuffer support is not enabled for this version of "
-	    "E2SAR send. To read data directly from a ringbuffer, "
-	    "create a pipe to read from stdin: ringselector | e2sarwf -s -"
-	    );
-	throw std::invalid_argument(msg);
+	CRingBuffer* pRing = CRingAccess::daqConsumeFrom(strUrl);
+	return new RingDataSource(pFactory, *pRing);
     } else if (proto == "file") {
         std::string path = uri.getPath();
 	// Need it to last past block:
