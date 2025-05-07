@@ -68,8 +68,8 @@ conflicting_options(const po::variables_map &vm,
 /**
  * @brief Ensure that dependent options are specified
  * @param vm References our variables map
- * @param opt1 First cmdline option
- * @param opt2 Second cmdline option
+ * @param for_what First cmdline option
+ * @param required_option Second cmdline option
  * @throw std::logic_error If a dependency exists but is not satisfied
  */
 void option_dependency(const po::variables_map &vm,
@@ -85,7 +85,8 @@ void option_dependency(const po::variables_map &vm,
 
 /**
  * @brief Run the application - either in `send` or `recv` mode.
- * @params argc, argv Command-line arg count and arg vector
+ * @param argc Command-line arguemnt count  
+ * @param argv Argument vector
  * @return int
  * @retval 0 Success
  * @retval -1 Failure, generally with some contextual error message

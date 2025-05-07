@@ -18,5 +18,5 @@ rm -rf build
 (mkdir build ;
  cd build ;
  cmake .. -DNSCLDAQ_ROOT=$DAQROOT -DCMAKE_INSTALL_PREFIX=$prefix ;
- cmake --build . -j4 ;
+ cmake --build . -j ;
  cmake --install .)

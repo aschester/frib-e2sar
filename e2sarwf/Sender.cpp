@@ -69,7 +69,7 @@ using namespace e2sar;
 using namespace frib_e2sar;
 using namespace ufmt;
 
-const double MAX_FILL_PCT = 0.9;
+const double MAX_FILL_PCT = 0.9; //!< Send buffer minimum fill percent
 
 Sender* Sender::m_pInstance = nullptr;
 

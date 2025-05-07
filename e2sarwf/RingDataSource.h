@@ -14,26 +14,43 @@
 	     Michigan State University
 	     East Lansing, MI 48824-1321
 */
+
+/** 
+ * @file  RingDataSource.h
+ * @brief Provide ring items from a ringbuffer
+ */
+
 #ifndef RINGDATASOURCE_H
 #define RINGDATASOURCE_H
 
-/** @file:  RingDataSource.h
- *  @brief: Provide ring items from a ringbuffer.
- */
-
 #include "DataSource.h"
-using namespace ufmt;
 
 class CRingBuffer;
+
+/**
+ * @class RingDataSource
+ * @brief This class provides a data source to get items from a ringbuffer.
+ */
 
 class RingDataSource : public DataSource
 {
 private:
-    CRingBuffer& m_ring;
+    CRingBuffer& m_ring; //!< References the ringbuffer we get data from
 public:
-    RingDataSource(RingItemFactoryBase* pFact, CRingBuffer& ring);
-    virtual ~RingDataSource();
-    virtual CRingItem* getItem();
+    /**
+     * @brief Constructor
+     * @param pFact Factory we use to get items.
+     * @param ring  References the ring buffer from which rings come.
+     */
+    RingDataSource(ufmt::RingItemFactoryBase* pFact, CRingBuffer& ring);
+    /** @brief Destructor */
+    virtual ~RingDataSource() {};
+    
+    /**
+     * @brief Get the next item from the ring buffer
+     * @return Pointer to next ring item - cannot be nullptr!
+     */
+    virtual ufmt::CRingItem* getItem();
 };
 
 #endif

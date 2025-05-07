@@ -15,7 +15,7 @@
 */
 
 /** 
- * @file FribEjfatUtils.h
+ * @file FribE2sarUtils.h
  * @brief Define some useful functions for E2SAR processing and a namespace 
  * they can reside in
  */

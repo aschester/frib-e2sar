@@ -15,35 +15,21 @@
 	     East Lansing, MI 48824-1321
 */
 
-/** @file:  RingDataSource.cpp
- *  @brief: Implement RingDataSource class..
+/** 
+ * @file RingDataSource.cpp
+ * @brief Implement RingDataSource class
  */
 
 #include "RingDataSource.h"
+
 #include <RingItemFactoryBase.h>
+
 using namespace ufmt;
 
-/**
- * constructor
- *    @param pFact - factory we use to get items.
- *    @param ring  - References the ring buffer from which rings come.
- */
 RingDataSource::RingDataSource(RingItemFactoryBase* pFact, CRingBuffer& ring) :
     DataSource(pFact), m_ring(ring)
-    {}
-    
-/**
- * destructor
- */
-RingDataSource::~RingDataSource()
-{
-    
-}
-/**
- * getItem
- *    Get the next item from the ring buffer.
- * @return CRingItem* - can never be null.
- */
+{}
+
 CRingItem*
 RingDataSource::getItem()
 {

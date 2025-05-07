@@ -58,12 +58,16 @@ public:
     virtual ~FileDataSink ();    
 
 private:
-    // Copy and assignment are not sensible b/c ownership
-    // of the file becomes ambiguous
+    /**
+     * @name DeletedOperations
+     * @brief Copy and assignment are not sensible b/c ownership of the file 
+     * becomes ambiguous
+     */
+     /**@{*/
     FileDataSink(const FileDataSink&);
     FileDataSink& operator=(const FileDataSink&);
+    /**@}*/
 
-    // Implementation of required interface:
 public:
     /**
      * @brief Write ring item to the sink

@@ -36,7 +36,7 @@ class DataSink;
 namespace po = boost::program_options;
 
 /**
- * @class Reciever
+ * @class Receiver
  * @brief Receive data via EJFAT/E2SAR
  * @details
  * Listen for data and write it to data sink(s). Each dequeue thread writes 
