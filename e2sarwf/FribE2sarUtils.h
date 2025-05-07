@@ -33,13 +33,13 @@
  */
 namespace frib_e2sar {
     /**
-     * @brief Byte dump of buffer to stderr.
+     * @brief Formatted byte dump of buffer to stderr
      * @param buf Pointer to the start of the data buffer we're dumping
      * @param nBytes Number of bytes to dump
      */    
     void dumpBuffer(u_int8_t* buf, size_t nBytes);
     /**
-     * @brief Read URI from EJFAT_URI or non-empty string if passed.
+     * @brief Read URI from EJFAT_URI or non-empty string if passed
      * @param uri URI string; if empty, read from EJFAT_URI environment 
      * variable.
      * @param tt Token type used to construct the URI
@@ -51,26 +51,26 @@ namespace frib_e2sar {
 			   const e2sar::EjfatURI::TokenType& tt,
 			   const bool preferV6=false);
     /**
-     * @brief Read segmenter configuration from ini file.
+     * @brief Read segmenter configuration from ini file
      * @param fname Name of the configuration file for the segmenter
      * @throw std::runtime_error If we cannot read the flags from the ini file 
      * @return The segmenter flags read from the file
      */
     e2sar::Segmenter::SegmenterFlags getSegmenterFlagsFromFile(std::string fname);
     /**
-     * @brief Read reassembler configuration from .ini file.
+     * @brief Read reassembler configuration from .ini file
      * @param fname Name of the configuration file for the reassembler
      * @throw std::runtime_error If we cannot read the flags from the ini file
      * @return The reassembler flags read from the file
      */
     e2sar::Reassembler::ReassemblerFlags getReassemblerFlagsFromFile(std::string fname);
     /**
-     * @brief Print the segmenter flags to stdout.
+     * @brief Print the segmenter flags to stdout
      * @param flags The flags
      */
     void printSegmenterFlags(const e2sar::Segmenter::SegmenterFlags& flags);
     /**
-     * @brief Print the reassembler flags to stdout.
+     * @brief Print the reassembler flags to stdout
      * @param flags The flags
      */
     void printReassemblerFlags(const e2sar::Reassembler::ReassemblerFlags& flags);

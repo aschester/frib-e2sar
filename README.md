@@ -12,12 +12,12 @@ This document is not intended as a comprehensive user's manual for this project,
 - CMake 3.18
 - Compiler support for C++17 standard
 
-A Docker image based on Debian 11 (Bullseye) with preinstalled E2SAR binaries and prereqs is available here: https://hub.docker.com/r/aschester/e2sar-bullseye. The Docker image can be used to build images with Apptainer, Shifter, etc. The project will incorporate its own Unified Format Library as a git submodule.
+A Docker image based on Debian 11 (Bullseye) with preinstalled E2SAR binaries and prereqs is available here: https://hub.docker.com/r/aschester/e2sar-bullseye. The Docker image can be used to build images with Apptainer, Shifter, etc. The project will incorporate its own <a href="https://github.com/FRIBDAQ/UnifiedFormat">Unified Format Library</a> as a git submodule.
 
 ## Building the codes
 
 - Clone the repository from https://github.com/aschester/frib-e2sar.git.
-- Ensure the Unified Format Library submodule is initialized properly by running the commands `git submodule init` and `git submodule update`. One can ensure the submodules are initialized properly by cloning the project via `git clone --recurse submodules ...` as well.
+- Ensure the Unified Format Library submodule is initialized properly by running the commands `git submodule init` and `git submodule update`. One can ensure the submodules are initialized properly by cloning the project via `git clone --recurse-submodules [URL of git repository]` as well.
 - Build the project using CMake:
 
 ```
@@ -29,12 +29,13 @@ cmake --install .
 
 You can override the default unified format path by setting an alternative during the first stage of the build with `-DUFMT_ROOT=/path/to/ufmt`. Parallel builds are supported by the `-j` flag, where `-jN` will use `N` cores to build. Note that due to some internal dependencies the build _may_ fail if `N` is "large."
 
-The install directory contians five (5) folders:
+The install directory contians six (6) folders:
 - bin/     : contains project binaries
 - include/ : contains project headers
 - lib/     : contains project libraries, including those for the Unified Format subproject
 - ini/     : example initialization files for the Segmenter and Reassembler
 - scripts/ : scripts to setup and run the FRIB event-building pipeline (DEPRECATED 5/6/25)
+- share/   : project documentation and examples for frib-e2sar (share/html/) and Unified Format (share/htmldocs/ and share/examples/)
 
 ## Running the examples
 

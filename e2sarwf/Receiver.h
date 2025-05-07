@@ -20,6 +20,11 @@
 		  --ASC 5/1/25
 */
 
+/**
+ * @file Receiver.h
+ * @brief Defines a class to receive data through EJFAT/E2SAR
+ */
+
 #ifndef RECEIVER_H
 #define RECIEVER_H
 
@@ -43,7 +48,8 @@ namespace po = boost::program_options;
  * to its own sink (ringbuffer or file). Each event buffer recieved by this 
  * class is internally ordered as the data appeared in the source. However, 
  * buffers may arrive out-of-order and data in the sink(s) do not preserve 
- * the source ordering.
+ * the source ordering. This class runs an E2SAR Reassembler in non-blocking
+ * mode to grab the data.
  * @todo (ASC 5/6/25): Receiver must be coupled to orderer(s) to re-sort data. 
  * Glom can be used to merge and output a single stream of built events for 
  * raw data. For data which is already built, the process of ordering and 
@@ -66,7 +72,7 @@ private:
 
     std::unique_ptr<e2sar::Reassembler> m_pReassembler; //!< E2SAR Reassembler
     
-    static Receiver* m_pInstance; // Part of the signal-handling interface
+    static Receiver* m_pInstance; //!< Part of the signal-handling interface
     
 public:
     /**

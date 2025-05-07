@@ -112,7 +112,7 @@ namespace frib_e2sar {
 
     /**
      * @details
-     * The `withLBHeader` flag is set to !useCP in this function. 
+     * The `withLBHeader` flag is set to `!useCP` in this function. 
      * If you attempt to set this flag set in the initialization file, 
      * that value will be ignored.
      */

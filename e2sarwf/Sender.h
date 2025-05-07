@@ -52,9 +52,10 @@ namespace po = boost::program_options;
  * @brief Send data through EJFAT/E2SAR.
  * @details 
  * This class defines a functor to send data through EJFAT/E2SAR. The event 
- * loop runs inside the class' `operator()`. Configuration of the object is 
- * handled through the constructor. The static methods `setInstance()` and 
- * `ctrlCHandler()` exist to allow safe shutdown on SIGINT and in general 
+ * loop runs inside the class' `operator()`. Data is sent via an instance of 
+ * the E2SAR Segmenter running in non-blocking mode. Configuration of the 
+ * object is handled through the constructor. The static method
+ * `ctrlCHandler()` exists to allow safe shutdown on SIGINT and in general 
  * should not be considered part of the public interface to this class. 
  */
 

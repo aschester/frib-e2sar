@@ -20,6 +20,11 @@
 		  --ASC 5/1/25
 */
 
+/**
+ * @file Receiver.cpp
+ * @brief Implement the data receiver class
+ */
+
 #include "Receiver.h"
 
 #include <csignal>

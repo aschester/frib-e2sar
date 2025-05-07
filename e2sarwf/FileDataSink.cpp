@@ -55,9 +55,9 @@ FileDataSink::FileDataSink(int fd) :
  * Obtains a file descriptor given a valid pathname. If file doesn't exist
  * a new file is opened with RDWR permissions. If the file exists, its contents
  * are overwritten.
- * @todo (????): Open failures might be best signalled with CErrnoException or,
- * if not, the string should at least have strerror in it for the errno so the 
- * user can know why the file could not be opened.
+ * @todo Open failures might be best signalled with CErrnoException or, if not,
+ * the string should at least have strerror in it for the errno so the user can
+ * know why the file could not be opened.
  */
 FileDataSink::FileDataSink(std::string fname) :
     m_fd(-1)
