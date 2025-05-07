@@ -15,24 +15,21 @@
 */
 
 /** 
- * @file FribEjfatUtils.cpp
- * @brief Function implementation for EJFAT utils.
+ * @file FribE2sarUtils.cpp
+ * @brief Function implementation for E2SAR utils.
  */
 
-#include "FribEjfatUtils.h"
+#include "FribE2sarUtils.h"
 
 #include <iostream>
 
+///
 // This is not my preferred implementation due to the added level of nesting
 // but CMake defaults for Doxygen are able to resolve the namespace usage
-// in this case but not if the functions are e.g., frib_ejfat::dumpBuffer().
+// in this case but not if the functions are e.g., frib_e2sar::dumpBuffer().
 // -ASC 3/12/25
-namespace frib_ejfat {
-    /**
-     * @brief Byte dump of buffer to stderr.
-     * @param buf Pointer to the start of the data buffer we're dumping
-     * @param nBytes Number of bytes to dump
-     */
+//
+namespace frib_e2sar {
     void
     dumpBuffer(u_int8_t* buf, size_t nBytes) {
 	size_t printed = 0; // Total bytes printed (incl. padding)
@@ -60,50 +57,39 @@ namespace frib_ejfat {
 	std::cerr << std::dec << std::endl;
     }
 
-    /**
-     * @brief Read URI from EJFAT_URI or non-empty string if passed.
-     * @param uri URI string; if empty, read from EJFAT_URI environment 
-     *   variable.
-     * @param tt  Token type used to construct the URI
-     * @param preferV6 Prefer IpV6 (optional, default=false)
-     * @return The Ejfat URI
-     * @note Failure to create a valid URI is fatal
+    /** 
+     * @details 
+     * Failure to create a valid URI is fatal.
      */
     e2sar::EjfatURI
-    getURI(const std::string uri, const e2sar::EjfatURI::TokenType& tt,
+    getUri(const std::string uri, const e2sar::EjfatURI::TokenType& tt,
 	   const bool preferV6)
     {
-	auto uri_rv = (
+	auto rv = (
 	    uri.empty() ?
 	    e2sar::EjfatURI::getFromEnv("EJFAT_URI"s, tt, preferV6) :
 	    e2sar::EjfatURI::getFromString(uri, tt, preferV6)
 	    );	
-	if (uri_rv.has_error())
-	{
-	    std::cerr << "Error in parsing URI "s + uri_rv.error().message()
-		      << std::endl;
-	    exit(EXIT_FAILURE);
+	if (rv.has_error()) {
+	    std::string msg("Error in parsing URI ");
+	    msg += rv.error().message();
+	    throw std::runtime_error(msg);
 	}
     
-	return uri_rv.value();
+	return rv.value();
     }
 
-    /**
-     * @brief Read segmenter configuration from INI file.
-     * @param fname Name of the configuration file for the segmenter
-     * @return The segmenter flags read from the file
-     */
     e2sar::Segmenter::SegmenterFlags
-    getSegmenterFlagsFromINI(std::string fname)
+    getSegmenterFlagsFromFile(std::string fname)
     {
-	auto flags_rv = e2sar::Segmenter::SegmenterFlags::getFromINI(fname);
-	if (flags_rv.has_error()) {
-	    std::cerr << "Error reading configuration file: "s
-		+ flags_rv.error().message() << std::endl;
-	    exit(EXIT_FAILURE);
+	auto rv = e2sar::Segmenter::SegmenterFlags::getFromINI(fname);
+	if (rv.has_error()) {
+	    std::string msg("Error reading configuration file: ");
+	    msg += rv.error().message();
+	    throw std::runtime_error(msg);
 	}
 
-	auto flags = flags_rv.value();
+	auto flags = rv.value();
     
 	// Print out some info about the flags:
     
@@ -125,21 +111,22 @@ namespace frib_ejfat {
     }
 
     /**
-     * @brief Read reassembler configuration from INI file.
-     * @param fname Name of the configuration file for the reassembler
-     * @return The reassembler flags read from the file
+     * @details
+     * The `withLBHeader` flag is set to !useCP in this function. 
+     * If you attempt to set this flag set in the initialization file, 
+     * that value will be ignored.
      */
     e2sar::Reassembler::ReassemblerFlags
-    getReassemblerFlagsFromINI(std::string fname)
+    getReassemblerFlagsFromFile(std::string fname)
     {
-	auto flags_rv = e2sar::Reassembler::ReassemblerFlags::getFromINI(fname);
-	if (flags_rv.has_error()) {
-	    std::cerr << "Error reading configuration file: "s
-		+ flags_rv.error().message() << std::endl;
-	    exit(EXIT_FAILURE);
+	auto rv = e2sar::Reassembler::ReassemblerFlags::getFromINI(fname);
+	if (rv.has_error()) {
+	    std::string msg("Error reading configuration file: ");
+	    msg += rv.error().message();
+	    throw std::runtime_error(msg);
 	}
 
-	auto flags = flags_rv.value();
+	auto flags = rv.value();
 
 	// Expect LB header to be included (mainly for testing when
 	// useCP == false, as normally LB strips it off in normal operation);
@@ -152,6 +139,8 @@ namespace frib_ejfat {
 
 	std::cout << "Control plane will be "
 		  << (flags.useCP ? "ON" : "OFF") << std::endl;
+	std::cout << "Expecting LB header "
+		  << (flags.withLBHeader ? "YES" : "NO") << std::endl;
 	std::cout << (flags.useCP ?
 		      "*** Make sure the LB has been reserved and the URI "
 		      "reflects the reserved instance information."
@@ -161,16 +150,11 @@ namespace frib_ejfat {
 	return flags;
     }
 
-    /**
-     * @brief Print the segmenter flags to stdout.
-     * @param flags The flags
-     */
     void
     printSegmenterFlags(const e2sar::Segmenter::SegmenterFlags& flags)
     {
 	std::cout << "Segmenter flags:\n";
 	std::cout << "\tdpV6\t\t" << flags.dpV6 << std::endl;
-	std::cout << "\tzeroCopy\t" << flags.zeroCopy << std::endl;
 	std::cout << "\tconnectedSocket\t" << flags.connectedSocket
 		  << std::endl;
 	std::cout << "\tuseCP\t\t" << flags.useCP << std::endl;
@@ -184,10 +168,6 @@ namespace frib_ejfat {
 		  << " (bytes)" << std::endl;
     }
 
-    /**
-     * @brief Print the reassembler flags to stdout.
-     * @param flags The flags
-     */
     void
     printReassemblerFlags(const e2sar::Reassembler::ReassemblerFlags& flags)
     {
@@ -209,4 +189,5 @@ namespace frib_ejfat {
 	std::cout <<"\tmin_factor\t" << flags.min_factor << std::endl;
 	std::cout <<"\tmax_factor\t" << flags.max_factor << std::endl;
     }
-} // end namespace frib_ejfat
+    
+} // end namespace frib_e2sar

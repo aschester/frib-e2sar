@@ -9,7 +9,8 @@
 
      Author:
              Jeromy Tompkins
-             NSCL
+	     Aaron Chester
+             FRIB
              Michigan State University
              East Lansing, MI 48824-1321
 */
@@ -19,7 +20,7 @@
 
 /**
  * @file DataSink.h
- * @brief Abstract base class for data sinks.
+ * @brief Abstract base class for data sinks
  */
 
 #include <stdlib.h>
@@ -32,37 +33,33 @@ namespace ufmt {
 /** 
  * @brief Interface for DataSinks
  * @details
- * This is a pure virtual base class that establishes an
- * expected interface for all data sinks.
+ * This is a pure virtual base class that establishes an expected interface 
+ * for all data sinks.
  */
 
 class DataSink
 {    
 public:    
-    /** The virtual destructor */
+    /** @brief The virtual destructor */
     virtual ~DataSink();
 
     /**
      * @brief A method defining how to send ring items to the sink
      * @param item References the ring item to put into the sink
      */
-    virtual void putItem(const ufmt::CRingItem& item) = 0;
-    
+    virtual void putItem(const ufmt::CRingItem& item) = 0;    
     /**
      * @brief Write a block of data to the sink
      * @param pData  Pointer to start of contiguous data to write
      * @param nBytes Number of bytes to write
      */
     virtual void put(const void* pData, size_t nBytes) = 0;
-
     /**
-     * @brief Vectorized I/O for file sinks. For now it has to be part
-     * of the base class for runtime polymorphism. Maybe best to make
-     * pure virtual and then throw some kind of not-implemented exception
-     * for ringbuffer sinks?
+     * @brief Vectorized I/O for file sinks
+     * @param iovs Pointer to iovec of ring items we write to the sink
+     * @param iovcnt Number of iovs
      */
-    virtual void putItemsV(iovec* iovs, size_t iovcnt) {};
-    virtual void putV(iovec* iovs, size_t iovcnt) {};
+    virtual void putV(iovec* iovs, size_t iovcnt) = 0;
 
 };
 

@@ -8,16 +8,16 @@ This document is not intended as a comprehensive user's manual for this project,
 
 - E2SAR software and prereqs (https://github.com/JeffersonLab/E2SAR/wiki/Code-and-Binaries)
 - NSCLDAQ 12.1 or later
-- FRIB unified format library 2.2-004 or later
+- Unified Format Library 2.2-007 or later
 - CMake 3.18
 - Compiler support for C++17 standard
 
-A Docker image based on Debian 11 (Bullseye) with preinstalled E2SAR binaries and prereqs is available here: https://hub.docker.com/r/aschester/e2sar-bullseye. The Docker image can be used to build images with Apptainer, Shifter, etc.
+A Docker image based on Debian 11 (Bullseye) with preinstalled E2SAR binaries and prereqs is available here: https://hub.docker.com/r/aschester/e2sar-bullseye. The Docker image can be used to build images with Apptainer, Shifter, etc. The project will incorporate its own Unified Format Library as a git submodule.
 
 ## Building the codes
 
-- Clone the repository from https://github.com/aschester/frib-e2sar.git
-- Configure the environment in the container by sourcing some NSCLDAQ 12.1 with ufmt library installed at $DAQROOT/unifiedformat or use the UFMT environment variable to point to broken-out ufmt library 2.2-004 or later.
+- Clone the repository from https://github.com/aschester/frib-e2sar.git.
+- Ensure the Unified Format Library submodule is initialized properly by running the commands `git submodule init` and `git submodule update`. One can ensure the submodules are initialized properly by cloning the project via `git clone --recurse submodules ...` as well.
 - Build the project using CMake:
 
 ```
@@ -32,16 +32,12 @@ You can override the default unified format path by setting an alternative durin
 The install directory contians five (5) folders:
 - bin/     : contains project binaries
 - include/ : contains project headers
-- lib/     : contains project libraries, for now libEjfatIO.so, which provides unified format compliant data sources and sinks. It is unused for the time being but its trivial to build and may be of some use later. Who knows.
+- lib/     : contains project libraries, including those for the Unified Format subproject
 - ini/     : example initialization files for the Segmenter and Reassembler
-- scripts/ : scripts to setup and run the FRIB event-building pipeline
+- scripts/ : scripts to setup and run the FRIB event-building pipeline (DEPRECATED 5/6/25)
 
 ## Running the examples
 
-The installation /bin directory contains executables, organized by their function:
-- checkdefaults/ : print some default information about the E2SAR configuration
-- sendrecv/      : sender and receiver for built FRIBDAQ data
-- evtbuild/      : codes for sending raw data through E2SAR for reassembler-side event building. Running the event building pipeline is covered in detail in the next section.
 Running programs with the `-h` option will show all command-line options and their defaults. Sensible defaults for parameters are set in most cases. All programs which use the E2SAR streaming libraries expect an EJFAT URI either passed on the command line or stored in an environment variable. Anything passed on the command line when running the program will override preset values.
 
 The EJFAT URI has the form:
@@ -52,9 +48,9 @@ For testing I usually export the URI or define it in an environment file which s
 
 `export EJFAT_URI="ejfat://mytoken@127.0.0.1:23456/lb/123?data=127.0.0.1:23457&sync=127.0.0.1:23458"`.
 
-The quotes on the string may be needed to prevent your shell from interpreting `&` as a shell command. The above URI is used for one-to-one Segmenter-to-Reassembler streaming without an EJFAT load balancer. Note that in this case, the `cp_host`, `data_host` and `sync_host` are all 127.0.0.1 i.e., localhost. For one-to-one reassembly, the receiver should listen on the data port, which in this example is 23457.
+The quotes on the string may be needed to prevent your shell from interpreting `&` as a shell command. The above URI is used for one-to-one Segmenter-to-Reassembler streaming without an EJFAT load balancer. Note that in this case, the `cp_host`, `data_host` and `sync_host` are all `127.0.0.1` i.e., `localhost`. For one-to-one reassembly, the receiver should listen on the data port, which in this example is 23457.
 
-### Running the FRIB-E2SAR event building pipeline
+### Running the FRIB-E2SAR event building pipeline (DEPRECATED 5/6/25)
 
 The E2SAR event-building pipeline is controlled via two scripts and an event-builder configuration file:
 - `reas_and_sort.py` : runs the Reassembler and ddasSort. The Reassembler outputs reassembled raw data into a raw ringbuffer. ddasSort reads from this ringbuffer and puts its output into a sorted ringbuffer.
@@ -90,3 +86,4 @@ Once the proper number of end runs is seen, the event-building pipeline and even
 - Ensure that useCP is set to the same value in both the segmenter and reassembler configuration files.
 - Pipeline configuration is entirely hardcoded, so be cautious when changing e.g., ringbuffer names.
 - In "most" cases the pipeline can safely shut itself down when it encounters and error. Ctrl-C (SIGINT) will be propagated to all child processes and is generally the safest way to exit the python scripts. In some cases hanging processes must be killed on the command line. Most likely this is going to be a stray ringFragmentSource.
+- As of 5/6/25 the contents of the `scripts` folder are largely outdated, though it does provide a framework for recussitating the event-building features of the workflow if needed.

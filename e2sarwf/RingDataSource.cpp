@@ -16,26 +16,22 @@
 */
 
 /** 
- * @file StreamDataSource.cpp
- * @brief Implement the stream data source.
+ * @file RingDataSource.cpp
+ * @brief Implement RingDataSource class
  */
 
-#include "StreamDataSource.h"
+#include "RingDataSource.h"
 
 #include <RingItemFactoryBase.h>
 
 using namespace ufmt;
 
-StreamDataSource::StreamDataSource(
-    RingItemFactoryBase* pFactory, std::istream& str
-    ) :
-    DataSource(pFactory), m_str(str)
+RingDataSource::RingDataSource(RingItemFactoryBase* pFact, CRingBuffer& ring) :
+    DataSource(pFact), m_ring(ring)
 {}
 
-StreamDataSource::~StreamDataSource() {}
-
 CRingItem*
-StreamDataSource::getItem()
+RingDataSource::getItem()
 {
-    return m_pFactory->getRingItem(m_str);
+    return m_pFactory->getRingItem(m_ring);
 }

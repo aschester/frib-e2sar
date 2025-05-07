@@ -16,13 +16,13 @@
 	     East Lansing, MI 48824-1321
 */
 
-#ifndef FDDATASOURCE_H
-#define FDDATASOURCE_H
-
 /** 
  * @file  FdDataSource.h
  * @brief Data source of undifferentiated ring items from a file descriptor 
  */
+
+#ifndef FDDATASOURCE_H
+#define FDDATASOURCE_H
 
 #include "DataSource.h"
 
@@ -39,19 +39,19 @@ private:
 
 public:
     /**
-     * @brief Constructor. 
-     * @param pFactory Pointer to the factory used to get items.
+     * @brief Constructor
+     * @param pFactory Pointer to the factory used to get items
      * @param fd File descriptor open on the data source. The caller owns this,
-     *   we don't close it on destruction.
+     * we don't close it on destruction
      */
     FdDataSource(ufmt::RingItemFactoryBase* pFactory, int fd);
-    /** @brief Destructor. */
+    /** @brief Destructor */
     virtual ~FdDataSource();
     /** 
      * @brief Get a ring item from the soruce. Implementation of the mandatory 
-     * interface from the base class.
-     * @return Pointer to the next ring item from the stream.
-     * @retval nullptr If none.
+     * interface from the base class
+     * @return Pointer to the next ring item from the stream
+     * @retval nullptr If none
      */
     virtual ufmt::CRingItem* getItem();
 };

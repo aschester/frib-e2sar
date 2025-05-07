@@ -1,0 +1,170 @@
+/*
+    This software is Copyright by the Board of Trustees of Michigan
+    State University (c) Copyright 2017.
+
+    You may use this software under the terms of the GNU public license
+    (GPL).  The terms of this license are described at:
+
+     http://www.gnu.org/licenses/gpl.txt
+
+     Authors:
+             Aaron Chester
+             FRIB
+             Michigan State University
+             East Lansing, MI 48824-1321
+
+     Author note: This code is heavily based on e2sar_perf.cpp provided as 
+                  an example by the E2SAR collaboration. The source code and 
+		  lisence for the E2SAR collaboration software can be found 
+		  at: https://github.com/JeffersonLab/E2SAR
+		  --ASC 5/1/25
+*/
+
+#ifndef RECEIVER_H
+#define RECIEVER_H
+
+#include <memory>
+
+#include <boost/program_options.hpp>
+
+#include <NSCLDAQFormatFactorySelector.h>
+
+namespace e2sar {
+    class Reassembler;
+}
+class DataSink;
+namespace po = boost::program_options;
+
+/**
+ * @class Receiver
+ * @brief Receive data via EJFAT/E2SAR
+ * @details
+ * Listen for data and write it to data sink(s). Each dequeue thread writes 
+ * to its own sink (ringbuffer or file). Each event buffer recieved by this 
+ * class is internally ordered as the data appeared in the source. However, 
+ * buffers may arrive out-of-order and data in the sink(s) do not preserve 
+ * the source ordering.
+ * @todo (ASC 5/6/25): Receiver must be coupled to orderer(s) to re-sort data. 
+ * Glom can be used to merge and output a single stream of built events for 
+ * raw data. For data which is already built, the process of ordering and 
+ * merging the streams is still under investigation (guts of ddasSort? 
+ * Orderer?)
+ */
+
+class Receiver
+{
+private:
+    std::string m_proto;    //!< Protocol for data sink
+    std::string m_hostName; //!< Hostname for ringbuffer data sink
+    std::string m_basePath; //!< Base path for file data sink
+    std::string m_baseName; //!< Base name of sink
+    int m_duration;         //!< Run duration in seconds
+    size_t m_deqThreads;    //!< Number of dequeue threads reading data
+    bool m_threadsRunning;  //!< True while running
+    bool m_debug;           //!< Enable debugging output
+    bool m_verbose;         //!< Enable verbose output of e.g, configuration
+
+    std::unique_ptr<e2sar::Reassembler> m_pReassembler; //!< E2SAR Reassembler
+    
+    static Receiver* m_pInstance; // Part of the signal-handling interface
+    
+public:
+    /**
+     * @brief Constructor
+     * @param vm References the variables map used to configure the class
+     * @throw std::runtime_error A receiver instance already exists
+     */
+    Receiver(po::variables_map& vm);
+    /** @brief Destructor */
+    ~Receiver();
+
+    /**
+     * @brief Run the event loop
+     * @throw std::runtime_error Failure to initialize or start Reassembler
+     * @return int
+     * @retval 0 Success
+     * @retval -1 Failure (hopefully with contextual error message on stderr)
+     */
+    int operator()();
+    
+    /**
+     * @brief Part of the signal-handling interface: handle Ctrl-C interrupt 
+     * and shutdown safely
+     * @param sig Signal to handle (expected to be SIGINT)
+     * @note (ASC 5/6/25): This method must be a static method with C linkage 
+     * but should be considered, practically speaking, internal to the class 
+     * itself. It uses the singleton-like instance variable to call the class' 
+     * shutdown method. Not recommended to call this method externally.
+     */ 
+    static void ctrlCHandler(int sig);
+
+private:
+    /**
+     * @brief Part of the signal-handling interface: set instance for handler
+     * @param r Pointer to instance
+     */ 
+    static void setInstance(Receiver* r) { m_pInstance = r; };
+    /** @brief Shutdown the receiver. Deregister workers. Stop threads. */
+    void shutdown();
+    /**
+     * @brief Map the version we get from the command line to a factory version
+     * @param vsn Format the user requested
+     * @throw std::invalid_argument Bad format version
+     * @return Factory version ID (from the enum)
+     */
+    ufmt::FormatSelector::SupportedVersions mapVersion(int vsn);
+    /**
+     * @brief Monitor Reassembler stats while running. 
+     */
+    void statsThread();
+    /**
+     * @brief Register workers, open and start the Reassembler.
+     */
+    int prepareToReceive();
+    /**
+     * @brief Receive and process data
+     * @param pSink Pointer to the data sink for this receive thread
+     */
+    int receiveEvents(DataSink* pSink);
+    /**
+     * @brief Write data to a sink
+     * @param pData Data buffer to write
+     * @param nBytes Number of bytes in buffer
+     * @param pSink Pointer to data sink we're writing to
+     */
+    void write(void* pData, size_t nBytes, DataSink* pSink);
+    /**
+     * @brief Create a data sink
+     * @param threadNum Thread index to create unique sink name
+     * @throw std::runtime_error Unknown sink protocol
+     * @return Pointer to created sink
+     */
+    DataSink* makeDataSink(size_t threadNum);
+    /**
+     * @brief Create a sink URI from a string
+     * @param threadNum Thread index to create unique sink name
+     * @return URI string for generic data sink with a thread index
+     */
+    std::string makeSinkUri(size_t threadNum);
+    /**
+     * @brief Return the size of the item
+     * @param pData Pointer to a ring item
+     * @return Number of bytes in that item
+     */
+    size_t itemSize(void* pData);
+    /**
+     * @brief Get pointer to beginning of next item
+     * @param pData Pointer to data block
+     * @return void* Pointer to the next item in the block
+     */
+    void* nextItem(void* pData);
+    /**
+     * @brief Count the number of items in a block of data
+     * @param pData Pointer to the data
+     * @param nBytes Number of bytes in the block
+     * @return Number of items in the block
+     */
+    size_t countRingItems(void* pData, size_t nBytes);
+};
+
+#endif
