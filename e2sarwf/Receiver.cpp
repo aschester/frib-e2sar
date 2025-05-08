@@ -266,12 +266,18 @@ Receiver::statsThread()
 		      << std::endl;
 	}
 
-        std::cout << "\tEvents lost so far (<Evt ID:Data ID/num frags rcvd>): ";
-        for(auto evt: lostEvents) {
-            std::cout << "<" << evt.get<0>() << ":"
-		      << evt.get<1>() << "/" << evt.get<2>() << "> ";
-        }
-        std::cout << std::endl;
+	if (m_debug) {
+	    std::cout << "\tEvents lost so far "
+		"(<Evt ID:Data ID/num frags rcvd>): ";
+	    for(auto evt: lostEvents) {
+		std::cout << "<" << evt.get<0>() << ":"
+			  << evt.get<1>() << "/" << evt.get<2>() << "> ";
+	    }
+	    std::cout << std::endl;
+	} else {
+	    std::cout << "\tEvents lost so far: "
+		      << lostEvents.size() << std::endl;
+	}
 
         auto until = now + boost::chrono::milliseconds(2000);
         boost::this_thread::sleep_until(until);

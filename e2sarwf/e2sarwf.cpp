@@ -144,6 +144,8 @@ main(int argc, char* argv[])
 	 "number of receiver threads is equal to the number of cores [s,r]");
     opts("optimize,o", po::value<std::vector<std::string>>()->multitoken(),
 	 "a list of optimizations to turn on [s]");
+    opts("mtu,m", po::value<u_int16_t>()->default_value(9000),
+	 "MTU size in bytes) [s]");
 
     // Additions to base options:
     
@@ -191,6 +193,7 @@ main(int argc, char* argv[])
         conflicting_options(vm, "recv", "rate");
 	conflicting_options(vm, "recv", "queue-size");
 	conflicting_options(vm, "recv", "source");
+	conflicting_options(vm, "recv", "mtu");
 	option_dependency(vm, "send", "ip");
 	option_dependency(vm, "recv", "ip");
         option_dependency(vm, "recv", "port");
