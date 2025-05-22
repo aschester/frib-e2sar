@@ -159,7 +159,7 @@ main(int argc, char* argv[])
     opts("proto", po::value<std::string>()->default_value("ring"),
 	 "data sink URI protocol (file or ring) [r]");
     opts("hostname", po::value<std::string>()->default_value("localhost"),
-	 "hosn name for ringbuffer data sink [r]");
+	 "host name for ringbuffer data sink [r]");
     opts("basepath", po::value<std::string>()->default_value(cwd),
 	 "base path for file data sink [r]");
     opts("basename", po::value<std::string>()->default_value("reas"),

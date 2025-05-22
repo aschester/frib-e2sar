@@ -286,7 +286,7 @@ Receiver::statsThread()
 
 /** 
  * @details 
- * Per E2SAR collaboration: If we switch the order of `registerWorker?()` and 
+ * Per E2SAR collaboration: If we switch the order of `registerWorker()` and 
  * `openAndStart()` you get into a race condition where the sendState thread 
  * starts and tries to send queue updates, however the session token is not 
  * yet available...
@@ -422,7 +422,7 @@ Receiver::makeDataSink(size_t threadNum)
 std::string
 Receiver::makeSinkUri(size_t threadNum)
 {
-    char uri[256]; // Hopefully big enough...
+    char uri[1024]; // Hopefully big enough...
     if (m_proto == "ring" || m_proto == "tcp") {
 	sprintf(uri, "%s://%s/%s_t%.2d", m_proto.c_str(),
 		m_hostName.c_str(), m_baseName.c_str(), threadNum);
