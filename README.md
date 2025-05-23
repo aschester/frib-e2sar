@@ -96,7 +96,20 @@ Once the proper number of end runs is seen, the event-building pipeline and even
 Below is an example command to configure NSCLDAQ 12.1 build to use the same version of boost and Python as the E2SAR software. This example is run from the build directory under the top-level NSCLDAQ source directory after running `autoconf -if` to generate the configuration script:
 
 ```
-../configure --prefix=/usr/opt/daq/12.1-010.e2sar --with-incorp-build-cores=4 --enable-docs --enable-usb --enable-epics-tools --with-epics-rootdir=/usr/opt/epics --enable-caen-digitizer-support --with-caen-digitizer-libroot=/usr/opt/caendigitizerlibs --enable-ddas --with-xiaapidir=/usr/opt/xiaapi/4.4.0 --with-firmwaredir=/usr/opt/ddas/firmware/2.2-001/firmware --with-dspdir=/usr/opt/ddas/firmware/2.2-001/dsp --with-rootsys=/usr/opt/root/6.26.04 --with-boost=/usr/local/include/boost --with-boost-libdir=/usr/local/lib CXX=/usr/opt/mpi/openmpi-4.1.4/bin/mpicxx PYTHON=/usr/bin/python3
+../configure --prefix=/usr/opt/daq/12.1-010.e2sar
+--with-incorp-build-cores=4
+--enable-docs
+--enable-usb --enable-epics-tools --with-epics-rootdir=/usr/opt/epics
+--enable-caen-digitizer-support
+--with-caen-digitizer-libroot=/usr/opt/caendigitizerlibs --enable-ddas
+--with-xiaapidir=/usr/opt/xiaapi/4.4.0
+--with-firmwaredir=/usr/opt/ddas/firmware/2.2-001/firmware
+--with-dspdir=/usr/opt/ddas/firmware/2.2-001/dsp
+--with-rootsys=/usr/opt/root/6.26.04
+--with-boost=/usr/local/include/boost
+--with-boost-libdir=/usr/local/lib
+CXX=/usr/opt/mpi/openmpi-4.1.4/bin/mpicxx
+PYTHON=/usr/bin/python3
 ```
 
 ## Appendix B: Processing pre-built data
