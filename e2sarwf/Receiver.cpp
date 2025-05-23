@@ -141,14 +141,11 @@ Receiver::operator()()
     
     if (prepareToReceive()) {
 	throw std::runtime_error("Failed to initialize and start Reassembler");
-    }
+    }    
 
     std::vector<boost::thread> threads;
-    std::vector<std::unique_ptr<DataSink>> sinks;
-
-    // Testing with single ringbuffer, multiple write threads:
-    
-    std::unique_ptr<DataSink> pSink(makeDataSink(0));
+    // std::vector<std::unique_ptr<DataSink>> sinks;
+    std::unique_ptr<DataSink> pSink(makeDataSink(0)); // All dequeues
     
     for (size_t i = 0; i < m_deqThreads; i++) {
 	// std::unique_ptr<DataSink> pSink(makeDataSink(i));
@@ -156,8 +153,6 @@ Receiver::operator()()
 	threads.push_back(std::move(t));
 	// sinks.push_back(std::move(pSink));
     }
-
-    sinks.push_back(std::move(pSink));
     
     for (auto& t : threads) {
      	t.join();

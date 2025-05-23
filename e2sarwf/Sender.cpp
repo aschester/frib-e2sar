@@ -118,7 +118,9 @@ Sender::Sender(po::variables_map& vm) :
     //
 
     std::string iniFile;
-    if (!vm.count("ini")) {
+    if (vm.count("ini")) {
+	iniFile = vm["ini"].as<std::string>();
+    } else {
 	auto cwd = std::filesystem::current_path();
 	iniFile = cwd.string() + "/segmenter_config.ini";
     }
