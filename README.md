@@ -91,7 +91,7 @@ Once the proper number of end runs is seen, the event-building pipeline and even
 - As of 5/6/25 the contents of the `scripts` folder are largely outdated, though it does provide a framework for recussitating the event-building features of the workflow if needed.
 - Command-line evb, terminal1: `$DAQBIN/startOrderer frib_e2sar_evb 2> orderer.err | $DAQBIN/glom --dt 1000 --nobuild | $DAQBIN/stdintoring frib_e2sar_evb |& cat`; terminal 2: `$DAQBIN/ringFragmentSource -n localhost --evbport 30999 --info=test --ids=0 --ring=tcp://localhost/reas_t00 --expectbodyheaders`; terminal 3: `cat /scratch/e2sar/data/run-0071-00.evt | $DAQBIN/stdintoring reas_t00`
 
-## Appendix A: NSCLDAQ build configuraiton
+## Appendix A: NSCLDAQ build configuration
 
 Below is an example command to configure NSCLDAQ 12.1 build to use the same version of boost and Python as the E2SAR software. This example is run from the build directory under the top-level NSCLDAQ source directory after running `autoconf -if` to generate the configuration script:
 
