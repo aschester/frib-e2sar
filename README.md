@@ -1,6 +1,6 @@
 # FRIB-E2SAR dev
 
-This is a repository for various E2SAR-related development codes for FRIB data processing. The subdirectories contain examples of simple initialization and segmenter-reassembly workflows as well as configuration files and run scripts. The scripts are used to run FRIBDAQ services to build and record event data on the reassembly side of the E2SAR pipeline.
+This is a repository for various E2SAR-related development codes for FRIB data processing. The subdirectories contain example codes for inspecting E2SAR configuration info and running simple workflows on FRIB data. The Python and bash scripts in the scripts directory are used to run FRIBDAQ services to build and record event data on the reassembly side of the E2SAR pipeline.
 
 This document is not intended as a comprehensive user's manual for this project, rather it is a loose and evolving set of developer notes so I (ASC) don't forget how to do this stuff.
 
@@ -8,11 +8,12 @@ This document is not intended as a comprehensive user's manual for this project,
 
 - E2SAR software and prereqs (https://github.com/JeffersonLab/E2SAR/wiki/Code-and-Binaries)
 - NSCLDAQ 12.1 or later
-- Unified Format Library 2.2-007 or later
-- CMake 3.18
+- CMake 3.18 or later
 - Compiler support for C++17 standard
 
 A Docker image based on Debian 11 (Bullseye) with preinstalled E2SAR binaries and prereqs is available here: https://hub.docker.com/r/aschester/e2sar-bullseye. The Docker image can be used to build images with Apptainer, Shifter, etc. The project will incorporate its own <a href="https://github.com/FRIBDAQ/UnifiedFormat">Unified Format Library</a> as a git submodule.
+
+Since the E2SAR binaries are built against a newer Pyhton version and boost libraries than are available through the standard Debian repositories, it is advisable to build a version of NSCLDAQ 12.1 under the above container with the same Python and boost used by E2SAR. See [Appendix A](#appendix-a-nscldaq-build-configuration) for an example of how to do this.
 
 ## Building the codes
 
@@ -88,4 +89,14 @@ Once the proper number of end runs is seen, the event-building pipeline and even
 - Pipeline configuration is entirely hardcoded, so be cautious when changing e.g., ringbuffer names.
 - In "most" cases the pipeline can safely shut itself down when it encounters and error. Ctrl-C (SIGINT) will be propagated to all child processes and is generally the safest way to exit the python scripts. In some cases hanging processes must be killed on the command line. Most likely this is going to be a stray ringFragmentSource.
 - As of 5/6/25 the contents of the `scripts` folder are largely outdated, though it does provide a framework for recussitating the event-building features of the workflow if needed.
-- Command-line evb, terminal1: $DAQBIN/startOrderer frib_e2sar_evb 2> orderer.err | $DAQBIN/glom --dt 1000 --nobuild | $DAQBIN/stdintoring frib_e2sar_evb |& cat; terminal 2: $DAQBIN/ringFragmentSource -n localhost --evbport 30999 --info=test --ids=0 --ring=tcp://localhost/reas_t00 --expectbodyheaders; terminal 3: >cat /scratch/e2sar/data/run-0071-00.evt | $DAQBIN/stdintoring reas_t00
+- Command-line evb, terminal1: `$DAQBIN/startOrderer frib_e2sar_evb 2> orderer.err | $DAQBIN/glom --dt 1000 --nobuild | $DAQBIN/stdintoring frib_e2sar_evb |& cat`; terminal 2: `$DAQBIN/ringFragmentSource -n localhost --evbport 30999 --info=test --ids=0 --ring=tcp://localhost/reas_t00 --expectbodyheaders`; terminal 3: `cat /scratch/e2sar/data/run-0071-00.evt | $DAQBIN/stdintoring reas_t00`
+
+## Appendix A: NSCLDAQ build configuraiton
+
+Below is an example command to configure NSCLDAQ 12.1 build to use the same version of boost and Python as the E2SAR software. This example is run from the build directory under the top-level NSCLDAQ source directory after running `autoconf -if` to generate the configuration script:
+
+```
+../configure --prefix=/usr/opt/daq/12.1-010.e2sar --with-incorp-build-cores=4 --enable-docs --enable-usb --enable-epics-tools --with-epics-rootdir=/usr/opt/epics --enable-caen-digitizer-support --with-caen-digitizer-libroot=/usr/opt/caendigitizerlibs --enable-ddas --with-xiaapidir=/usr/opt/xiaapi/4.4.0 --with-firmwaredir=/usr/opt/ddas/firmware/2.2-001/firmware --with-dspdir=/usr/opt/ddas/firmware/2.2-001/dsp --with-rootsys=/usr/opt/root/6.26.04 --with-boost=/usr/local/include/boost --with-boost-libdir=/usr/local/lib CXX=/usr/opt/mpi/openmpi-4.1.4/bin/mpicxx PYTHON=/usr/bin/python3
+```
+
+## Appendix B: Processing pre-built data
