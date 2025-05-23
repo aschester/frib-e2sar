@@ -92,7 +92,9 @@ Receiver::Receiver(po::variables_map& vm) :
     //
 
     std::string iniFile;
-    if (!vm.count("ini")) {
+    if (vm.count("ini")) {
+	iniFile = vm["ini"].as<std::string>();
+    } else {
 	auto cwd = std::filesystem::current_path();
 	iniFile = cwd.string() + "/reassembler_config.ini";
     }
@@ -139,15 +141,15 @@ Receiver::operator()()
     
     if (prepareToReceive()) {
 	throw std::runtime_error("Failed to initialize and start Reassembler");
-    }
+    }    
 
     std::vector<boost::thread> threads;
     std::vector<std::unique_ptr<DataSink>> sinks;
+    // std::unique_ptr<DataSink> pSink(makeDataSink(0)); // All dequeues
+    
     for (size_t i = 0; i < m_deqThreads; i++) {
 	std::unique_ptr<DataSink> pSink(makeDataSink(i));
-	boost::thread t(
-	    std::bind(&Receiver::receiveEvents, this, pSink.get())
-	    );
+	boost::thread t(std::bind(&Receiver::receiveEvents, this, pSink.get()));
 	threads.push_back(std::move(t));
 	sinks.push_back(std::move(pSink));
     }
@@ -266,12 +268,18 @@ Receiver::statsThread()
 		      << std::endl;
 	}
 
-        std::cout << "\tEvents lost so far (<Evt ID:Data ID/num frags rcvd>): ";
-        for(auto evt: lostEvents) {
-            std::cout << "<" << evt.get<0>() << ":"
-		      << evt.get<1>() << "/" << evt.get<2>() << "> ";
-        }
-        std::cout << std::endl;
+	if (m_debug) {
+	    std::cout << "\tEvents lost so far "
+		"(<Evt ID:Data ID/num frags rcvd>): ";
+	    for(auto evt: lostEvents) {
+		std::cout << "<" << evt.get<0>() << ":"
+			  << evt.get<1>() << "/" << evt.get<2>() << "> ";
+	    }
+	    std::cout << std::endl;
+	} else {
+	    std::cout << "\tEvents lost so far: "
+		      << lostEvents.size() << std::endl;
+	}
 
         auto until = now + boost::chrono::milliseconds(2000);
         boost::this_thread::sleep_until(until);
@@ -280,7 +288,7 @@ Receiver::statsThread()
 
 /** 
  * @details 
- * Per E2SAR collaboration: If we switch the order of `registerWorker?()` and 
+ * Per E2SAR collaboration: If we switch the order of `registerWorker()` and 
  * `openAndStart()` you get into a race condition where the sendState thread 
  * starts and tries to send queue updates, however the session token is not 
  * yet available...
@@ -416,7 +424,7 @@ Receiver::makeDataSink(size_t threadNum)
 std::string
 Receiver::makeSinkUri(size_t threadNum)
 {
-    char uri[256]; // Hopefully big enough...
+    char uri[1024]; // Hopefully big enough...
     if (m_proto == "ring" || m_proto == "tcp") {
 	sprintf(uri, "%s://%s/%s_t%.2d", m_proto.c_str(),
 		m_hostName.c_str(), m_baseName.c_str(), threadNum);

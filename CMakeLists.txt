@@ -75,6 +75,7 @@ add_compile_options(-g -O2 #-Wall
 add_subdirectory(UnifiedFormat)
 add_subdirectory(checkdefaults)
 add_subdirectory(e2sarwf)
+add_subdirectory(utils)
 add_subdirectory(docs)
 
 # Install ini and script directories as-is:

@@ -85,6 +85,7 @@ void RingDataSink::openRing()
     if (CRingBuffer::isRing(m_ringName)) {
 	m_pRing = new CRingBuffer(m_ringName,CRingBuffer::producer);
     } else {
+	//size_t size = 128*1024*1024;
 	m_pRing = CRingBuffer::createAndProduce(m_ringName);
     }
 

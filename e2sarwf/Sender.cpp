@@ -118,12 +118,18 @@ Sender::Sender(po::variables_map& vm) :
     //
 
     std::string iniFile;
-    if (!vm.count("ini")) {
+    if (vm.count("ini")) {
+	iniFile = vm["ini"].as<std::string>();
+    } else {
 	auto cwd = std::filesystem::current_path();
 	iniFile = cwd.string() + "/segmenter_config.ini";
     }
     
     auto flags = getSegmenterFlagsFromFile(iniFile);
+
+    if (vm.count("mtu")) {
+	flags.mtu = vm["mtu"].as<u_int16_t>();
+    }
 
     /////////////////////////////////////////////////////////////////////////
     // Create EJFAT URI
@@ -202,13 +208,17 @@ Sender::Sender(po::variables_map& vm) :
 	std::cout << "----- Sender configuration -----" << std::endl;
 	printSegmenterFlags(flags);
 	std::cout << "Using URI:   " << ejfatUri.to_string() << std::endl;
-	std::cout << "Sending:     " << m_nEvents << " events" << std::endl;
+	if (m_nEvents > 0) {
+	    std::cout << "Sending:     " << m_nEvents << " events" << std::endl;
+	} else {
+	    std::cout << "Sending:     all events" << std::endl;
+	}
 	std::cout << "Data ID:     " << m_dataId << std::endl;
 	std::cout << "Source ID:   " << srcId << std::endl;
 	std::cout << "evtBufSize:  " << m_evtBufSize << " bytes" << std::endl;
 	std::cout << "maxBufBytes: " << m_maxBufBytes << " bytes " << std::endl;
 	std::cout << "sendRate:    " << m_rateGbps << " Gbps" << std::endl;
-	std::cout << "Queue size   " << queueSize << std::endl;
+	std::cout << "Queue size:  " << queueSize << std::endl;
 	std::cout << "E2SAR selected optimizations:  "
 		  << concatWithSeparator(Optimizations::selectedAsStrings())
 		  << std::endl;
@@ -276,12 +286,6 @@ Sender::operator()()
 	
     auto pEvtBufPool = std::make_unique<boost::pool<>>(m_evtBufSize);
     u_int8_t* evtBuf{nullptr}; // Buffer from pool - fill and send
-    
-    if (m_verbose) {
-	std::cout << "Starting send loop at: "
-		  << boost::chrono::high_resolution_clock::now()
-		  << std::endl;
-    }
 
     /////////////////////////////////////////////////////////////////////////
     // Send loop
@@ -292,6 +296,8 @@ Sender::operator()()
     size_t     totalBytes = 0; // Total bytes sent
     bool       done = false;
 
+    auto start = boost::chrono::high_resolution_clock::now();
+    
     while (!done) {
 	auto now = boost::chrono::high_resolution_clock::now();
 	
@@ -369,6 +375,8 @@ Sender::operator()()
 	boost::this_thread::sleep_until(until);
     }
 
+    auto dt = boost::chrono::high_resolution_clock::now() - start;
+    
     // Done sending events, report:
 
     auto stats = m_pSegmenter->getSendStats();
@@ -385,7 +393,11 @@ Sender::operator()()
 		      << strerror(stats.lastErrno)
 		      << std::endl;
     }
-
+    
+    std::cout << "Send loop runtime: "
+	      << boost::chrono::duration<double>(dt)
+	      << std::endl;
+    
     // Cleaup pool:
     
     pEvtBufPool->purge_memory();

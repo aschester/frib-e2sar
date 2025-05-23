@@ -8,6 +8,7 @@ set(DOXYGEN_EXCLUDE_PATTERNS
   ${CMAKE_SOURCE_DIR}/UnifiedFormat/*
   ${CMAKE_BINARY_DIR}/UnifiedFormat/*
   ${CMAKE_BINARY_DIR}/fmtconfig.h
+  ${CMAKE_BINARY_DIR}/utils/tsvalidate/cmdline.h
   )
 
 doxygen_add_docs(doxygen_target

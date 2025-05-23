@@ -111,8 +111,8 @@ main(int argc, char* argv[])
 	 "event buffer size in bytes [s]");
     opts("uri,u", po::value<std::string>()->default_value(""),
 	 "specify EJFAT_URI on the command-line instead of the envvar");
-    opts("num,n", po::value<size_t>()->default_value(10),
-	 "number of event buffers to send [s]");
+    opts("num,n", po::value<size_t>()->default_value(0),
+	 "number of event buffers to send (0 send all data) [s]");
     opts("enum,e", po::value<EventNum_t>()->default_value(0),
 	 "starting event number [s]");
     opts("srcid", po::value<u_int32_t>()->default_value(0),
@@ -144,6 +144,8 @@ main(int argc, char* argv[])
 	 "number of receiver threads is equal to the number of cores [s,r]");
     opts("optimize,o", po::value<std::vector<std::string>>()->multitoken(),
 	 "a list of optimizations to turn on [s]");
+    opts("mtu,m", po::value<u_int16_t>()->default_value(9000),
+	 "MTU size in bytes) [s]");
 
     // Additions to base options:
     
@@ -157,7 +159,7 @@ main(int argc, char* argv[])
     opts("proto", po::value<std::string>()->default_value("ring"),
 	 "data sink URI protocol (file or ring) [r]");
     opts("hostname", po::value<std::string>()->default_value("localhost"),
-	 "hosn name for ringbuffer data sink [r]");
+	 "host name for ringbuffer data sink [r]");
     opts("basepath", po::value<std::string>()->default_value(cwd),
 	 "base path for file data sink [r]");
     opts("basename", po::value<std::string>()->default_value("reas"),
@@ -191,6 +193,7 @@ main(int argc, char* argv[])
         conflicting_options(vm, "recv", "rate");
 	conflicting_options(vm, "recv", "queue-size");
 	conflicting_options(vm, "recv", "source");
+	conflicting_options(vm, "recv", "mtu");
 	option_dependency(vm, "send", "ip");
 	option_dependency(vm, "recv", "ip");
         option_dependency(vm, "recv", "port");
