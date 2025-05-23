@@ -92,7 +92,9 @@ Receiver::Receiver(po::variables_map& vm) :
     //
 
     std::string iniFile;
-    if (!vm.count("ini")) {
+    if (vm.count("ini")) {
+	iniFile = vm["ini"].as<std::string>();
+    } else {
 	auto cwd = std::filesystem::current_path();
 	iniFile = cwd.string() + "/reassembler_config.ini";
     }
@@ -143,14 +145,19 @@ Receiver::operator()()
 
     std::vector<boost::thread> threads;
     std::vector<std::unique_ptr<DataSink>> sinks;
+
+    // Testing with single ringbuffer, multiple write threads:
+    
+    std::unique_ptr<DataSink> pSink(makeDataSink(0));
+    
     for (size_t i = 0; i < m_deqThreads; i++) {
-	std::unique_ptr<DataSink> pSink(makeDataSink(i));
-	boost::thread t(
-	    std::bind(&Receiver::receiveEvents, this, pSink.get())
-	    );
+	// std::unique_ptr<DataSink> pSink(makeDataSink(i));
+	boost::thread t(std::bind(&Receiver::receiveEvents, this, pSink.get()));
 	threads.push_back(std::move(t));
-	sinks.push_back(std::move(pSink));
+	// sinks.push_back(std::move(pSink));
     }
+
+    sinks.push_back(std::move(pSink));
     
     for (auto& t : threads) {
      	t.join();

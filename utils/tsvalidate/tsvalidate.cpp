@@ -21,6 +21,8 @@
  * @brief Validate timestamp ordering for E2SAR pipeline processing. 
  * This is the ufmt evtdump modified to validate that event timestamps 
  * are monotonically increasing.
+ * @note (ASC 5/22/25): Issue with CRangError exception when attempting to
+ * attach to ringbuffer when rate is high ( > 5 Gbps or so).
  */
 
 #include <algorithm>
@@ -57,6 +59,7 @@
 #include <CRemoteAccess.h>
 #include <CRingBuffer.h>
 #include <Exception.h>
+#include <RangeError.h>
 #include <URL.h>
 
 // Project headers:
@@ -72,7 +75,7 @@ using namespace ufmt;
 
 uint64_t currentTs = 0; //!< Timestamp of current event
 uint64_t prevTs = 0;    //!< Timestamp of previous event
-uint64_t counter = 0;   //!< Event index
+uint64_t counter = 0;   //!< Fragment counter
 
 // Map of exclusion type strings to type integers:
 
@@ -135,6 +138,12 @@ processItem(CRingItem* pItem, RingItemFactoryBase& factory)
     // version of the factory is used for the event file.
     
     switch(pItem->type()) {
+    case BEGIN_RUN:
+    {
+	std::cout << "Begin run found, resetting counter..." << std::endl;
+	counter = 0;
+    }
+    break;
     case RING_FORMAT:
     {
 	try {
@@ -143,9 +152,9 @@ processItem(CRingItem* pItem, RingItemFactoryBase& factory)
 		);
 	}
 	catch (std::bad_cast e) {
-	    throw std::logic_error("Unable to dump a data format "
-				   "item... likely you've specified "
-				   "the wrong --format");
+	    throw std::logic_error("Unable to dump a data format item... "
+				   "likely you've specified the wrong "
+				   "--format");
 	}
     }
     break;
@@ -156,8 +165,8 @@ processItem(CRingItem* pItem, RingItemFactoryBase& factory)
 	    );
 	currentTs = p->getEventTimestamp();
 	if (currentTs <= prevTs) {
-	    std::cerr << "Timestamps not increasing for fragment number "
-		      << counter << "!!! current: " << currentTs
+	    std::cerr << "Timestamps not increasing!!! Fragment number "
+		      << counter << " current: " << currentTs
 		      << " prev: " << prevTs << std::endl;
 	}
 	prevTs = currentTs;
@@ -166,8 +175,7 @@ processItem(CRingItem* pItem, RingItemFactoryBase& factory)
     default:
 	break;
     }
-    
-    // Iterate event counter:
+
     counter++;
 }
     
@@ -300,7 +308,8 @@ makeSourceString(const char* srcIn)
 }
 
 /**
- * @brief Main processing loop
+ * @brief Main processing loops
+ * @details Invalid timestamp information is printed to stderr
  * @param argc Argument count
  * @param argv Argument vector
  * @return 0 on success
@@ -336,7 +345,7 @@ int main(int argc, char** argv)
         // If there's a skip count skip exactly that many items:
         
         if (skipCount > 0) {
-            for (int i =0; i < skipCount; i++) {
+            for (int i = 0; i < skipCount; i++) {
                 std::unique_ptr<CRingItem> p(pSource->getItem());
                 if (!p.get()) {
                     exit(EXIT_SUCCESS);
@@ -346,12 +355,14 @@ int main(int argc, char** argv)
 	
         // Now dump the items that are not excluded and if there's a dumpCount
         // only dump that many items -- or until the end of the data source:
-        
+
+	std::cout << "Checking event timestamps..." << std::endl;
+	
         int remaining = dumpCount;
         while(1) {
             std::unique_ptr<CRingItem> pItem(pSource->getItem());
             if (!pItem.get()) {
-                exit(EXIT_SUCCESS);
+		break;
             }
             
             if (std::find(
@@ -367,16 +378,21 @@ int main(int argc, char** argv)
                 if (args.count_given) {
                     remaining--;
                     if(remaining <= 0) {
-                        exit(EXIT_SUCCESS);
+			break;
                     }
                 }
             }
 	}
+	std::cout << "... Done!" << std::endl;
     }
     catch (std::exception& e) {
         std::cerr << e.what() << std::endl;
         cmdline_parser_print_help();
         std::exit(EXIT_FAILURE);
+    }
+    catch (CRangeError& e) {
+	std::cerr << e.ReasonText() << std::endl;
+	std::exit(EXIT_FAILURE);
     }
     
     return 0;
