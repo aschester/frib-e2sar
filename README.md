@@ -60,7 +60,10 @@ The `reassemble.py` script should be run first to create the ringbuffers needed 
 
 #### reas_and_sort.py
 ```
-<daq-ejfat-01:e2sar >~/e2sar-analysis/reassemble.py -i ~/e2sar-analysis/reassembler_config.ini --ddas-raw
+<daq-ejfat-01:e2sar >~/e2sar-analysis/reassemble.py \
+-i ~/e2sar-analysis/reassembler_config.ini \
+--ddas-raw
+
 Using DAQBIN: /usr/opt/daq/12.1-010.e2sar/bin
 Running reas command: /user/0400x/frib-e2sar/bin/e2sarwf --recv -i /user/0400x/e2sar-analysis/reassembler_config.ini -t 1 --deq 1 -d 0
 STARTED OK /user/0400x/frib-e2sar/bin/e2sarwf --recv -i /user/0400x/e2sar-analysis/reassembler_config.ini -t 1 --deq 1 -d 0
@@ -112,6 +115,7 @@ Running the `run_recv_pipe.py` script will also pop up an EVB GUI showing the re
 <daq-ejfat-01:e2sar >~/frib-e2sar/bin/e2sarwf --send \
 -i ~/e2sar-analysis/segmenter_config.ini \
 -s file:///scratch/e2sar/data/22May2025-102523-run-0075-00.evt
+
 Control plane                ON
 Event rate reporting in Sync ON
 Using usecs as event numbers ON
@@ -167,6 +171,8 @@ The above examples assume raw NSCLDAQ data coming from a DDAS system. For more i
 - Ensure that useCP is set to the same value in both the segmenter and reassembler configuration files.
 - Pipeline configuration is entirely hardcoded, so be cautious when changing e.g., ringbuffer names.
 - In "most" cases the pipeline can safely shut itself down when it encounters and error. Ctrl-C (SIGINT) will be propagated to all child processes and is generally the safest way to exit the python scripts. In some cases hanging processes must be killed on the command line. Most likely this is going to be a stray ringFragmentSource.
+- For parallel event building from raw DDAS data, setting long accumulation windows for `reasseble.py` and `run_recv_pipe.py` may be necessary to ensure that the data initially buffered "long enough" to ensure no late fragments are output. The window may have to be quite large: for run 72 raw data and 4 parallel raw and sorted ringbuffers, windows of 1000s were needed.
+- How do we get data out of the sorter and/or through the log stage faster? At relatively modest rates with single thread receive, rates can cap out well below the transmission speed at ~ 50 Mbps (!!!!)
 
 ## Appendix A: NSCLDAQ build configuration
 
@@ -197,6 +203,41 @@ How the pipeline is configured to process pre-built data requires some additiona
 
 To inspect the output of adding a second EVB stage run the following:
 
-- Terminal 1: `$DAQBIN/startOrderer frib_e2sar_evb 2> orderer.err | $DAQBIN/glom --dt 1000 --nobuild | $DAQBIN/stdintoring frib_e2sar_evb |& cat`
+- Terminal 1: `$DAQBIN/startOrderer frib_e2sar_evb 2> orderer.err | $DAQBIN/glom --dt 1000 -s 0xff --nobuild | $DAQBIN/stdintoring frib_e2sar_evb |& cat`
 - Terminal 2: `$DAQBIN/ringFragmentSource -n localhost --evbport 30999 --info=test --ids=0 --ring=tcp://localhost/reas_t00 --expectbodyheaders`
 - Terminal 3: `cat /scratch/e2sar/data/run-0075-00.evt | $DAQBIN/stdintoring reas_t00`
+
+An event-built fragment from one EVB stage looks like:
+
+```
+-----------------------------------------------------------
+Event 76 bytes long
+Body Header:
+Timestamp:    69440
+SourceID:     0
+Barrier Type: 0
+004c 0000 0f40 0001 0000 0000 0000 0000 
+0034 0000 0000 0000 0034 0000 001e 0000 
+0014 0000 0f40 0001 0000 0000 0000 0000 
+0000 0000 000c 0000 01f4 0f0e 4020 0008 
+1b20 0000 0000 993a 1c7a 0000
+```
+
+The same event from a second level of event-building with `glom --nobuild`:
+
+```
+-----------------------------------------------------------
+Event 128 bytes long
+Body Header:
+Timestamp:    69440
+SourceID:     255
+Barrier Type: 0
+0080 0000 0f40 0001 0000 0000 0000 0000 
+0068 0000 0000 0000 0068 0000 001e 0000 
+0014 0000 0f40 0001 0000 0000 0000 0000 
+0000 0000 004c 0000 0f40 0001 0000 0000 
+0000 0000 0034 0000 0000 0000 0034 0000 
+001e 0000 0014 0000 0f40 0001 0000 0000 
+0000 0000 0000 0000 000c 0000 01f4 0f0e 
+4020 0008 1b20 0000 0000 993a 1c7a 0000 
+```

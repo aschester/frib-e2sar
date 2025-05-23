@@ -144,14 +144,14 @@ Receiver::operator()()
     }    
 
     std::vector<boost::thread> threads;
-    // std::vector<std::unique_ptr<DataSink>> sinks;
-    std::unique_ptr<DataSink> pSink(makeDataSink(0)); // All dequeues
+    std::vector<std::unique_ptr<DataSink>> sinks;
+    // std::unique_ptr<DataSink> pSink(makeDataSink(0)); // All dequeues
     
     for (size_t i = 0; i < m_deqThreads; i++) {
-	// std::unique_ptr<DataSink> pSink(makeDataSink(i));
+	std::unique_ptr<DataSink> pSink(makeDataSink(i));
 	boost::thread t(std::bind(&Receiver::receiveEvents, this, pSink.get()));
 	threads.push_back(std::move(t));
-	// sinks.push_back(std::move(pSink));
+	sinks.push_back(std::move(pSink));
     }
     
     for (auto& t : threads) {
