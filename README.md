@@ -99,7 +99,7 @@ Stats:
 ... more stats ...
 ```
 
-#### run_evb.py
+#### run_recv_pipe.py
 ```
 <daq-ejfat-01:e2sar >~/e2sar-analysis/run_recv_pipe.py --startup ~/e2sar-analysis/setup_evb.sh --ddas-raw
 Using DAQBIN: /usr/opt/daq/12.1-010.e2sar/bin
