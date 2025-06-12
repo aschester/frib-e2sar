@@ -9,6 +9,9 @@
 # @todo (ASC 5/21/25): More detailed argument help. For example, if --glom 0
 # and --ddas-raw are both specified, the latter argument is ignored.
 #
+##
+# @todo (ASC 6/4/25): evb sink and evtlog source may be different if filtering.
+#
 
 import argparse
 import os
@@ -146,33 +149,33 @@ def main():
     # Processing loop:
     #
 
-    while True:
-        create_sink(args.sink) # Make sure the sink exists
-        evbproc = subprocess.Popen(shlex.split(evbcmd), stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT, text=True)
-        print("Recording run...",end="")
-        sys.stdout.flush()
-        logproc = subprocess.run(shlex.split(logcmd), capture_output=True,
-                                 text=True)
-        
-        try:
-            logproc.check_returncode()
-        except subprocess.CalledProcessError as e:
-            print(f"ERROR: {e} {logproc.stdout} {logproc.stderr}")
-            print("Killing evb...")
-            evbproc.kill() # Kill off pipe if the event logger fails
-            evbproc.wait()
-            sys.exit(1)
-        else:
-            print("done")
-            sys.stdout.flush()            
-            print(f"{logcmd} completed with returncode {logproc.returncode}")
-            time.sleep(2)            
-            evbproc.kill()
-            evbproc.wait()
-            print(f"{evbcmd} completed with returncode {evbproc.returncode}")
-            time.sleep(2)
-            print("Restarting evb pipeline...")
+    #while True:
+    create_sink(args.sink) # Make sure the sink exists
+    evbproc = subprocess.Popen(shlex.split(evbcmd), stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True)
+    print("Recording run...",end="")
+    sys.stdout.flush()
+    logproc = subprocess.run(shlex.split(logcmd), capture_output=True,
+                             text=True)
+    
+    try:
+        logproc.check_returncode()
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: {e} {logproc.stdout} {logproc.stderr}")
+        print("Killing evb...")
+        evbproc.kill() # Kill off pipe if the event logger fails
+        evbproc.wait()
+        sys.exit(1)
+    else:
+        print("done")
+        sys.stdout.flush()            
+        print(f"{logcmd} completed with returncode {logproc.returncode}")
+        time.sleep(2)            
+        evbproc.kill()
+        evbproc.wait()
+        print(f"{evbcmd} completed with returncode {evbproc.returncode}")
+        time.sleep(2)
+        #print("Restarting evb pipeline...")
             
 if __name__ == "__main__":
     main()
