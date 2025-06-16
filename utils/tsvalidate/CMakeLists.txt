@@ -4,7 +4,7 @@ add_custom_target(
   COMMAND $(CC) -c cmdline.c
   SOURCES tsvalidateargs.ggo
   COMMENT "Building gengetopt args parser"
-  BYPRODUCTS   cmdline.o cmdline.h
+  BYPRODUCTS cmdline.o cmdline.h
   )
 
 add_executable(

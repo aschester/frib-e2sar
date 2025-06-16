@@ -55,8 +55,9 @@ def print_proc_results(proc):
 # @param args Parsed arguments used to configure the receive process
 #
 def reassemble_events(args):
-    cmd = (f"{reasexec} --recv -i {args.ini} -t {args.threads} "
-            f"--deq {args.deq} -d {args.duration}")
+    cmd = (f"{reasexec} --recv -i {args.ini} --ip {args.ip} "
+           f"--port {args.port} -t {args.threads} --deq {args.deq} "
+           f"-d {args.duration}")
     print(f"Running reas command: {cmd}")
     proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
@@ -99,8 +100,9 @@ def reassemble_events(args):
 # @param args Parsed arguments to configure the receiver and ddasSort
 #
 def reassemble_ddas_events(args):
-    rcmd = (f"{reasexec} --recv -i {args.ini} -t {args.threads} "
-            f"--deq {args.deq} -d {args.duration}")
+    rcmd = (f"{reasexec} --recv -i {args.ini} --ip {args.ip} "
+            f"--port {args.port} -t {args.threads} --deq {args.deq} "
+            f"-d {args.duration}")
     print(f"Running reas command: {rcmd}")
     rproc = subprocess.Popen(shlex.split(rcmd), stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
@@ -115,22 +117,26 @@ def reassemble_ddas_events(args):
     ##
     # Sort command - single src, fixed name, see @todos:
     #
+
+    sprocs = []
+    scmds = []
+    for i in range(int(args.deq)):
+        scmd = (f"""{os.getenv("DAQBIN")}/ddasSort -s tcp://localhost/reas_t0{i} -S reas_t0{i}_sort -W {args.window}""")
+        print(f"Running sort command: {scmd}")
+        sproc = subprocess.Popen(shlex.split(scmd), stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, text=True)
+        scmds.append(scmd)
+        sprocs.append(sproc)
     
-    scmd = (f"""{os.getenv("DAQBIN")}/ddasSort -s tcp://localhost/reas_t00 """
-            f"-S reas_t00_sort -W {args.window}")
-    print(f"Running sort command: {scmd}")
-    sproc = subprocess.Popen(shlex.split(scmd), stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, text=True)
-    
-    if sproc.returncode:
+    if any(p.returncode for p in sprocs):
         print(f"ERROR: sort exited with retval {sproc.returncode}")
-        print_proc_results(sproc)
+        print_proc_results(p)
         rproc.kill()
         rproc.wait()
         sys.exit(1)
     else:
         time.sleep(2)
-        print(f"STARTED OK {scmd}")
+        print(f"STARTED OK {all(cmd for cmd in scmds)}")
         
     ##
     # @brief Define a process-aware signal handler. Communicate signals to
@@ -183,6 +189,15 @@ def main():
         description="Run EVB pipe and eventlog for FRIB-E2SAR workflows",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
+    parser.add_argument("-i", "--ini",
+                        help="path to Reassembler configuration file",
+                        default=f"{os.getcwd()}/reassembler_config.ini")
+    parser.add_argument("--ip",
+                        help="IP addr the Reassembler process",
+                        default="35.11.82.130")
+    parser.add_argument("--port",
+                        help="Starting port number the Reassembler listens on",
+                        default=20000)
     parser.add_argument("-t", "--threads",
                         help="number of threads/ports Reassembler is "
                         "listening on",
@@ -196,9 +211,6 @@ def main():
     parser.add_argument("-w", "--window",
                         help="accumulation window for DDAS sorter in seconds",
                         default=10)
-    parser.add_argument("-i", "--ini",
-                        help="path to reassembler configuration file",
-                        default=f"{os.getcwd()}/reassembler_config.ini")
     parser.add_argument("--ddas-raw",
                         action="store_true",
                         help="data source is NSCLDAQ 12 raw DDAS data")

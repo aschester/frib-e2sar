@@ -145,7 +145,6 @@ Receiver::operator()()
 
     std::vector<boost::thread> threads;
     std::vector<std::unique_ptr<DataSink>> sinks;
-    // std::unique_ptr<DataSink> pSink(makeDataSink(0)); // All dequeues
     
     for (size_t i = 0; i < m_deqThreads; i++) {
 	std::unique_ptr<DataSink> pSink(makeDataSink(i));

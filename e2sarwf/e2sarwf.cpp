@@ -42,9 +42,10 @@
 namespace po = boost::program_options;
 using namespace e2sar;
 
-/** @todo (ASC 4/25/25): Handle signals without singletons? This implementation
- * is mostly hidden away. We only expect one instance of a sender or receiver 
- * but this is only very loosely enforced. */
+/** @todo (ASC 4/25/25): Alternative to signal-handling to avoid C-style 
+ * linkage and singletons. */
+/** @todo (ASC 6/6/25): Struct to store variables map options to decouple 
+ * Sender and Receiver from boost. */
 
 /**
  * @brief Check if two cmdline options confict
