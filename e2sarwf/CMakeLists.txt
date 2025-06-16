@@ -41,19 +41,17 @@ install(TARGETS ${exec} DESTINATION bin)
 set(filter_includes
   ${NSCLDAQ_INC}
   ${UFMT_INC}
-
   )
 set(filter_libs
+  ${Boost_LIBRARIES}
   ${NSCLDAQ_LIB}/libdaqshm.so
-  ${NSCLDAQ_LIB}/libEventBuilderClient.so
+  ${NSCLDAQ_LIB}/libdataformat.so
   ${UFMT_LIBS}
   )
 
 set(filter_exec evbfilter)
-set(filter_src evbfilter.cpp )
-#set(filter_headers )
+set(filter_src evbfilter.cpp)
 add_executable(${filter_exec} ${filter_src})
 target_include_directories(${filter_exec} PRIVATE ${filter_includes})
 target_link_libraries(${filter_exec} ${filter_libs})
-#install(FILES ${filter_headers} DESTINATION include)
 install(TARGETS ${filter_exec} DESTINATION bin)
