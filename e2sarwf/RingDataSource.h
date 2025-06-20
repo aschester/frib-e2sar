@@ -25,6 +25,8 @@
 
 #include "DataSource.h"
 
+#include <climits>
+
 class CRingBuffer;
 
 /**
@@ -51,6 +53,13 @@ public:
      * @return Pointer to next ring item - cannot be nullptr!
      */
     virtual ufmt::CRingItem* getItem();
+    /**
+     * @brief Get the next item from the ring buffer
+     * @param timeout Seconds to wait for data
+     * @return Pointer to next ring item or nullptr if timed out
+     */
+    ufmt::CRingItem* getItem(unsigned long timeout=ULONG_MAX);
+
 };
 
 #endif

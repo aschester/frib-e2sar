@@ -35,3 +35,9 @@ RingDataSource::getItem()
 {
     return m_pFactory->getRingItem(m_ring);
 }
+
+CRingItem*
+RingDataSource::getItem(unsigned long timeout)
+{
+    return m_pFactory->getRingItem(m_ring, timeout);
+}
