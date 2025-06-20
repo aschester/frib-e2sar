@@ -27,6 +27,8 @@
 
 #include <e2sar.hpp>
 
+#include <NSCLDAQFormatFactorySelector.h>
+
 /**
  * @namespace frib_e2sar
  * @brief Namespace for utility functions
@@ -74,6 +76,13 @@ namespace frib_e2sar {
      * @param flags The flags
      */
     void printReassemblerFlags(const e2sar::Reassembler::ReassemblerFlags& flags);
+    /**
+     * @brief Map the version we get from the command line to a factory version
+     * @param vsn Format the user requested
+     * @throw std::invalid_argument Bad format version
+     * @return Factory version ID (from the enum)
+     */
+    ufmt::FormatSelector::SupportedVersions mapVersion(int vsn);
 }
     
 #endif

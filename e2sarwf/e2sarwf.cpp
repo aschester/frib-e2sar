@@ -89,8 +89,8 @@ void option_dependency(const po::variables_map &vm,
  * @param argc Command-line arguemnt count  
  * @param argv Argument vector
  * @return int
- * @retval 0 Success
- * @retval -1 Failure, generally with some contextual error message
+ * @retval EXIT_SUCCESS Success
+ * @retval EXIT_FAILURE Failure, generally with some contextual error message
  */
 int
 main(int argc, char* argv[])
@@ -178,7 +178,7 @@ main(int argc, char* argv[])
     }
     catch (const boost::program_options::unknown_option& e) {
 	std::cout << "Unable to parse command line: " << e.what() << std::endl;
-	return -1;
+	return EXIT_FAILURE;
     }
 
     try {
@@ -207,12 +207,12 @@ main(int argc, char* argv[])
     catch (const std::logic_error &e) {
         std::cerr << "Error processing command-line options: "
 		  << e.what() << std::endl;
-        return -1;
+        return EXIT_FAILURE;
     }
     
     if (vm.count("help")) {
         std::cout << od << std::endl;
-        return 0;
+        return EXIT_SUCCESS;
     }
 
     /////////////////////////////////////////////////////////////////////////
@@ -235,25 +235,25 @@ main(int argc, char* argv[])
     }
     catch (std::exception& e) {
 	std::cout << "C++ std::exception -- " << e.what() << std::endl;
-	return -1;
+	return EXIT_FAILURE;
     }
     catch (E2SARException& e) {
 	auto msg = static_cast<std::string>(e);
 	std::cerr << "E2SAR exception -- " << msg << std::endl;
-	return -1;
+	return EXIT_FAILURE;
     }
     catch (CException& e) {
 	std::cerr << "NSCLDAQ exception -- " << e.ReasonText() << std::endl;
-	return -1;
+	return EXIT_FAILURE;
     }
     catch (std::string& msg) {
 	std::cerr << "std::string exception -- " << msg << std::endl;
-	return -1;
+	return EXIT_FAILURE;
     }
     catch (...) {
 	std::cerr << "Caught unexpected exception, exiting..." << std::endl;
-	return -1;
+	return EXIT_FAILURE;
     }
     
-    return 0;
+    return EXIT_SUCCESS;
 }

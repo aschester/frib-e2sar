@@ -19,8 +19,10 @@
 
 ##
 # @todo (ASC 5/21/25):
-# 1. ringFragmentSource for prebuilt data
-# 2. Configuration options i.e., set source ID for built data
+# - Improved control over configuration options i.e., set source IDs
+# - Read path for filter from env?
+# - Configuration of ringFragmentSource is inflexible and doesn't cover
+#   enough of the possible cases of rawdata input and/or building data
 #
  
 lappend auto_path [file join $::env(DAQROOT) TclLibs]
@@ -39,13 +41,14 @@ package require ui
 
 set usage "Setup EVB for FRIB-E2SAR workflows\nOptions:"
 set options {
+    {source.arg  ""   "Reassembled data ringbuffer source basename"}
     {sink.arg    ""   "Ringbuffer sink for built data"}
     {build.arg   1    "Build events (yes,no = 1,0)"}
     {glomdt.arg  1000 "Event build coincidence window in nanoseconds"}
     {window.arg  20   "Event orderer build window in seconds"}
     {ddasraw.arg 0    "NSCLDAQ 12 DDAS raw data yes/no = 1/0"}
 }
-set mandatory [list sink]
+set mandatory [list source sink]
 
 proc usage {} {
     puts stderr [::cmdline::usage $::options $::usage]
@@ -60,10 +63,11 @@ foreach option $mandatory {
     if {[dict get $parsed $option] eq ""} {
         puts stderr "\nERROR: -$option is required\n"
         usage
-        exit -1
+        exit 1
     }
 }
 
+set srcname   [dict get $parsed source]
 set evbring   [dict get $parsed sink]
 set glombuild [dict get $parsed build]
 set glomdt    [dict get $parsed glomdt]
@@ -81,27 +85,21 @@ wm title . "FRIB-E2SAR EVB"
 # by adding and starting the proper clients.
 # @param build Build events yes/no = 1/0
 #
-proc launchRingSources {build ddasraw} {
+proc launchRingSources {ddasraw srcname} {
     set daqbin $::env(DAQBIN)
 
     ##
     # Add additional clients here:
     #
-
-    if {$build == 1} { # Build events on receive
+    
+    set reas0 "[file join $daqbin ringFragmentSource] --evbhost=localhost --ids=0 --expectbodyheaders "
+	   
+    if {$ddasraw == 1} { # Building events on recv
 	   set port [EVBC::getOrdererPort]
 	   puts "Orderer listening on $port"
-	   
-	   set reas0 "[file join $daqbin ringFragmentSource] --evbhost=localhost --evbport=$port --ids=0 --expectbodyheaders "
-	   
-	   if {$ddasraw == 1} { # Read from sort ring if raw DDAS data is sent
-		  append reas0 "--info=reas_t00_sort --ring=tcp://localhost/reas_t00_sort"
-	      } else { # Otherwise read from the recv ringbuffer
-		  append reas0 "--info=reas_t00 --ring=tcp://localhost/reas_t00"
-	      }
-       } else { # No event building on receive
-	   puts "Unsupported: this will certainly fail!!!!"
-	   set reas0 ""
+	   append reas0 "--evbport=$port --info=${srcname}_t00_sort --ring=tcp://localhost/${srcname}_t00_sort"
+       } else { # Otherwise read from the recv ringbuffer
+	   append reas0 "--evbname myOrderer --info=${srcname}_t00 --ring=tcp://localhost/${srcname}_t00 "
        }
 	  
     puts $reas0
@@ -116,15 +114,33 @@ proc launchRingSources {build ddasraw} {
 EVBC::configParams window $window
 
 if {$glombuild == 1} {
-       EVBC::initialize -gui on -destring $evbring -glombuild $glombuild -glomdt $glomdt
+       EVBC::initialize -gui off -destring $evbring -glombuild $glombuild -glomdt $glomdt
        EVBC::onBegin
    } else {
-       ##
-       # Custom pipe: orderer | filter | stdintoring. Glom program is
-       # a useful example. Use CFragIO to read/write from/to stdin/stdout.
-       # Filter strips event orderer header off the fragment and passes
-       # the original ring item containing the same timestamp value.
-       #
+       set daqbin $::env(DAQBIN)
+       set startScript [file join $daqbin startOrderer]
+       set orderer [file join $daqbin Orderer]
+       set pipecommand "$orderer 2> orderer.err"
+
+       set glom "[file join $daqbin glom] --dt=$glomdt -s 0xff --nobuild"
+       append pipecommand " | $glom"
+
+       set filter "~/frib-e2sar/bin/evbfilter"
+       append pipecommand " | $filter"
+
+       set stdintoring "[file join $daqbin stdintoring] $evbring"
+       append pipecommand " | $stdintoring |& cat"
+
+       set pipefd [open "| $pipecommand" w+]
+
+       fconfigure $pipefd -buffering line -blocking 0
+
+       puts $pipefd "source $startScript"
+       ::flush $pipefd
+       puts $pipefd "set ::OutputRing $evbring"
+       ::flush $pipefd
+       puts $pipefd "start myOrderer"
+       ::flush $pipefd
    }
    
 set output [Output::getInstance .output]
@@ -132,6 +148,6 @@ grid .output -sticky nsew
 grid rowconfigure . {0} -weight 1
 grid columnconfigure . {0} -weight 1
 
-after [expr 1000]
+after [expr 2000]
 
-launchRingSources $glombuild $ddasraw
+launchRingSources $ddasraw $srcname

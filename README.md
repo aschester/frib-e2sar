@@ -1,6 +1,6 @@
 # FRIB-E2SAR dev
 
-This is a repository for various E2SAR-related development codes for FRIB data processing. The subdirectories contain example codes for inspecting E2SAR configuration info and running simple workflows on FRIB data. The Python and bash scripts in the scripts directory are used to run FRIBDAQ services to build and record event data on the reassembly side of the E2SAR pipeline.
+This is a repository for various E2SAR-related development codes for FRIB data processing. The subdirectories contain example codes for inspecting E2SAR configuration info and running simple workflows on FRIB data. The Python and bash scripts in the scripts/ directory are used to run FRIBDAQ services to build and record event data on the reassembly side of the E2SAR pipeline.
 
 This document is not intended as a comprehensive user's manual for this project, rather it is a loose and evolving set of developer notes so I (ASC) don't forget how to do this stuff.
 
@@ -25,7 +25,7 @@ Since the E2SAR binaries are built against a newer Pyhton version and boost libr
 ./install [-p <install_prefix>] [-c <build_cores>]
 ```
 
-If no installation prefix is provided, the install path defaults to ~/frib-e2sar. By default the build will use one (1) core. Note that due to some internal dependencies the build _may_ fail if the number of build cores is "large" (> 4 or so).
+If no installation prefix is provided, the install path defaults to ~/frib-e2sar. By default the build will use one (1) core.
 
 The install directory contians six (6) folders:
 - bin/ : contains project binaries
@@ -62,7 +62,7 @@ The `reassemble.py` script should be run first to create the ringbuffers needed 
 ```
 <daq-ejfat-01:e2sar >~/e2sar-analysis/reassemble.py \
 -i ~/e2sar-analysis/reassembler_config.ini \
---ddas-raw
+--ddasraw
 
 Using DAQBIN: /usr/opt/daq/12.1-010.e2sar/bin
 Running reas command: /user/0400x/frib-e2sar/bin/e2sarwf --recv -i /user/0400x/e2sar-analysis/reassembler_config.ini -t 1 --deq 1 -d 0
@@ -101,7 +101,7 @@ Stats:
 
 #### run_recv_pipe.py
 ```
-<daq-ejfat-01:e2sar >~/e2sar-analysis/run_recv_pipe.py --startup ~/e2sar-analysis/setup_evb.sh --ddas-raw
+<daq-ejfat-01:e2sar >~/e2sar-analysis/run_recv_pipe.py --startup ~/e2sar-analysis/setup_evb.sh --ddasraw
 Using DAQBIN: /usr/opt/daq/12.1-010.e2sar/bin
 Running evtbuild command: /user/0400x/e2sar-analysis/setup_evb.sh -sink frib_e2sar_evb -build 1 -glomdt 1000 -window 20 -ddasraw 1
 Running eventlog command: /usr/opt/daq/12.1-010.e2sar/bin/eventlog -s tcp://localhost/frib_e2sar_evb -n 1 -S 1000g --oneshot
@@ -171,8 +171,7 @@ The above examples assume raw NSCLDAQ data coming from a DDAS system. For more i
 - Ensure that useCP is set to the same value in both the segmenter and reassembler configuration files.
 - Pipeline configuration is entirely hardcoded, so be cautious when changing e.g., ringbuffer names.
 - In "most" cases the pipeline can safely shut itself down when it encounters and error. Ctrl-C (SIGINT) will be propagated to all child processes and is generally the safest way to exit the python scripts. In some cases hanging processes must be killed on the command line. Most likely this is going to be a stray ringFragmentSource.
-- For parallel event building from raw DDAS data, setting long accumulation windows for `reasseble.py` and `run_recv_pipe.py` may be necessary to ensure that the data initially buffered "long enough" to ensure no late fragments are output. The window may have to be quite large: for run 72 raw data and 4 parallel raw and sorted ringbuffers, windows of 1000s were needed.
-- How do we get data out of the sorter and/or through the log stage faster? At relatively modest rates with single thread receive, rates can cap out well below the transmission speed at ~ 50 Mbps (!!!!)
+- For parallel event building from raw DDAS data, setting long accumulation windows for `reasseble.py` and `run_recv_pipe.py` may be necessary to ensure that the data are initially buffered "long enough" to ensure no late fragments are output. The window may have to be quite large: for run 72 raw data and 4 parallel raw and sorted ringbuffers, windows of 1000s were needed.
 
 ## Appendix A: NSCLDAQ build configuration
 
@@ -197,7 +196,7 @@ PYTHON=/usr/bin/python3
 
 ## Appendix B: Processing pre-built data
 
-How the pipeline is configured to process pre-built data requires some additional explanation. The event orderer/glom process wraps the data payload in a bunch of extra headers: The body size, fragment header, ring item header, and ring item body header for the built event. This process happens even if the `--nobuild` flag is specified for the `glom` program. These extra headers amount to 52 additional bytes of data per event, which we want to remove while allowing the event ordering process to sort the built data coming through the E2SAR pipeline by timestamp. An event filter is provided for this purpose. **[EVENT FILTER UNDER DEVELOPMENT]** 
+Configuring the pipeline to process pre-built data requires some additional explanation. The event orderer/glom process wraps the data payload in a bunch of extra headers . This process happens even if the `--nobuild` flag is specified for the `glom` program. These extra headers amount to 52 additional bytes of data per event, which we want to remove while allowing the event ordering process to sort the built data coming through the E2SAR pipeline by timestamp.
 
 ### Building events from the command line
 
@@ -241,3 +240,5 @@ Barrier Type: 0
 0000 0000 0000 0000 000c 0000 01f4 0f0e 
 4020 0008 1b20 0000 0000 993a 1c7a 0000 
 ```
+
+The evbfilter program accepts input on stdin, i.e., from glom, stripts the second layer of headers off the fragment, and outputs data identical to the first event-building stage on stdout for i.e., input into a ringbuffer.

@@ -38,7 +38,6 @@ namespace e2sar {
     class Reassembler;
 }
 class DataSink;
-namespace po = boost::program_options;
 
 /**
  * @class Receiver
@@ -80,7 +79,7 @@ public:
      * @param vm References the variables map used to configure the class
      * @throw std::runtime_error A receiver instance already exists
      */
-    Receiver(po::variables_map& vm);
+    Receiver(boost::program_options::variables_map& vm);
     /** @brief Destructor */
     ~Receiver();
 
@@ -88,8 +87,8 @@ public:
      * @brief Run the event loop
      * @throw std::runtime_error Failure to initialize or start Reassembler
      * @return int
-     * @retval 0 Success
-     * @retval -1 Failure (hopefully with contextual error message on stderr)
+     * @retval EXIT_SUCCESS Success
+     * @retval EXIT_FAILURE Failure, hopefully with error message on stderr
      */
     int operator()();
     
@@ -113,23 +112,22 @@ private:
     /** @brief Shutdown the receiver. Deregister workers. Stop threads. */
     void shutdown();
     /**
-     * @brief Map the version we get from the command line to a factory version
-     * @param vsn Format the user requested
-     * @throw std::invalid_argument Bad format version
-     * @return Factory version ID (from the enum)
-     */
-    ufmt::FormatSelector::SupportedVersions mapVersion(int vsn);
-    /**
      * @brief Monitor Reassembler stats while running. 
      */
     void statsThread();
     /**
      * @brief Register workers, open and start the Reassembler.
+     * @return int
+     * @retval EXIT_SUCCESS Success
+     * @retval EXIT_FAILURE Failure, hopefully with error message on stderr
      */
     int prepareToReceive();
     /**
      * @brief Receive and process data
      * @param pSink Pointer to the data sink for this receive thread
+     * @return int
+     * @retval EXIT_SUCCESS Success
+     * @retval EXIT_FAILURE Failure, hopefully with error message on stderr
      */
     int receiveEvents(DataSink* pSink);
     /**

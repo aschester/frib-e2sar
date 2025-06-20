@@ -57,7 +57,7 @@ def print_proc_results(proc):
 def reassemble_events(args):
     cmd = (f"{reasexec} --recv -i {args.ini} --ip {args.ip} "
            f"--port {args.port} -t {args.threads} --deq {args.deq} "
-           f"-d {args.duration}")
+           f"-d {args.duration} --basename {args.basename}")
     print(f"Running reas command: {cmd}")
     proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
@@ -102,7 +102,7 @@ def reassemble_events(args):
 def reassemble_ddas_events(args):
     rcmd = (f"{reasexec} --recv -i {args.ini} --ip {args.ip} "
             f"--port {args.port} -t {args.threads} --deq {args.deq} "
-            f"-d {args.duration}")
+            f"-d {args.duration} --basename {args.basename}")
     print(f"Running reas command: {rcmd}")
     rproc = subprocess.Popen(shlex.split(rcmd), stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
@@ -121,7 +121,7 @@ def reassemble_ddas_events(args):
     sprocs = []
     scmds = []
     for i in range(int(args.deq)):
-        scmd = (f"""{os.getenv("DAQBIN")}/ddasSort -s tcp://localhost/reas_t0{i} -S reas_t0{i}_sort -W {args.window}""")
+        scmd = (f"""{os.getenv("DAQBIN")}/ddasSort -s tcp://localhost/{args.basename}_t0{i} -S {args.basename}_t0{i}_sort -W {args.window}""")
         print(f"Running sort command: {scmd}")
         sproc = subprocess.Popen(shlex.split(scmd), stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, text=True)
@@ -202,6 +202,9 @@ def main():
                         help="number of threads/ports Reassembler is "
                         "listening on",
                         default=1)
+    parser.add_argument("-b", "--basename",
+                        help="reassembled sink ringbuffer basename",
+                        default="reas")
     parser.add_argument("--deq",
                         help="number of dequeue threads (one sink per thread)",
                         default=1)
@@ -211,7 +214,7 @@ def main():
     parser.add_argument("-w", "--window",
                         help="accumulation window for DDAS sorter in seconds",
                         default=10)
-    parser.add_argument("--ddas-raw",
+    parser.add_argument("--ddasraw",
                         action="store_true",
                         help="data source is NSCLDAQ 12 raw DDAS data")
     args = parser.parse_args()
@@ -221,7 +224,7 @@ def main():
     # that the sort processes read from:
     #
 
-    if args.ddas_raw:
+    if args.ddasraw:
         daqbin = os.getenv("DAQBIN")
         if daqbin is None:
             print("NSCLDAQ 12 environment is required to sort raw DDAS data")

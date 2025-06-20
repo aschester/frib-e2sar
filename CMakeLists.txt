@@ -54,12 +54,13 @@ set(UFMT_INC
   ${CMAKE_SOURCE_DIR}/UnifiedFormat/abstract
   CACHE STRING "Unified format include dirs"
   )
+# As targets, not paths to ensure deps are built properly:
 set(UFMT_LIBS
-  ${CMAKE_BINARY_DIR}/UnifiedFormat/libNSCLDAQFormat.so
-  ${CMAKE_BINARY_DIR}/UnifiedFormat/v10/libV10Format.so
-  ${CMAKE_BINARY_DIR}/UnifiedFormat/v11/libV11Format.so
-  ${CMAKE_BINARY_DIR}/UnifiedFormat/v12/libV12Format.so
-  ${CMAKE_BINARY_DIR}/UnifiedFormat/abstract/libAbstractFormat.so
+  NSCLDAQFormat
+  V10Format
+  V11Format
+  V12Format
+  AbstractFormat
   CACHE STRING "Unified format libs"
   )
 
@@ -67,7 +68,7 @@ set(UFMT_LIBS
 # Build and install:
 ##
 
-# -Wall shows a lot of warnings from e.g. NSCLDAQ which we suppress.
+# -Wall shows a lot of warnings from e.g. NSCLDAQ which we suppress:
 add_compile_options(-g -O2 #-Wall
   )
 
