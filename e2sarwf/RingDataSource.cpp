@@ -30,10 +30,14 @@ RingDataSource::RingDataSource(RingItemFactoryBase* pFact, CRingBuffer& ring) :
     DataSource(pFact), m_ring(ring)
 {}
 
+/**
+ * @details
+ * Delegate to the `getItem()` call with a practically infinite timeout.
+ */
 CRingItem*
 RingDataSource::getItem()
 {
-    return m_pFactory->getRingItem(m_ring);
+    return getItem(ULONG_MAX);
 }
 
 CRingItem*

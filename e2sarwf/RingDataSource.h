@@ -58,7 +58,7 @@ public:
      * @param timeout Seconds to wait for data
      * @return Pointer to next ring item or nullptr if timed out
      */
-    ufmt::CRingItem* getItem(unsigned long timeout=ULONG_MAX);
+    ufmt::CRingItem* getItem(unsigned long timeout);
 
 };
 

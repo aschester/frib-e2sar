@@ -145,7 +145,7 @@ main(int argc, char* argv[])
 	 "number of receiver threads is equal to the number of cores [s,r]");
     opts("optimize,o", po::value<std::vector<std::string>>()->multitoken(),
 	 "a list of optimizations to turn on [s]");
-    opts("mtu,m", po::value<u_int16_t>()->default_value(9000),
+    opts("mtu,m", po::value<u_int16_t>(),
 	 "MTU size in bytes) [s]");
 
     // Additions to base options:
