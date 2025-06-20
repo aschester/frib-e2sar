@@ -16,13 +16,16 @@
 
 /**
  * @file evbfilter.cpp
- * @brief Filter to strip extra header from data processed using 
- * `glom --nobuild`
+ * @brief Filter to strip headers added during `glom --nobuild` of 
+ * pre-built event data.
  */
 
 #include <errno.h>
+#include <sstream>
 
 #include <boost/program_options.hpp>
+
+// NSCLDAQ:
 
 #include <CBufferedOutput.h>
 #include <CRingItem.h>
@@ -30,65 +33,65 @@
 #include <io.h>
 #include <os.h>
 
+// UFMT:
+
 #include <fragment.h>
 
-const unsigned BUFFER_SIZE=1024*1024;
+const unsigned BUFFER_SIZE=1024*1024; //!< Size of output buffer
 
+/** Manager for outputting buffered data, in this case to stdout */
 static io::CBufferedOutput outputter(STDOUT_FILENO, BUFFER_SIZE);
-static bool debug = false;
-uint32_t* pData = nullptr;
-size_t allocBytes = 0;
+static bool debug = false;    //!< Enable debugging output
+static uint32_t* pData;       //!< Data buffer
+static size_t allocBytes = 0; //!< Bytes allocated to data buffer
 
 namespace po = boost::program_options;
 using namespace ufmt::EVB;
 
 /**
- * @brief Read data from stdin, determine the ring item type and apply filter.
+ * @brief Read data from stdin and apply the filter if its a PHYSICS_EVENT.
  * @details
  * To ensure data is time-ordered at its final destination of an E2SAR 
  * workflow, we take advantage of the event orderer and glom with the 
  * `--nobuild` option. This ensures time-ordered output of PHYSICS_EVENT data 
  * _but_ with the additional complication that this second ordering stage 
  * means our data looks like:
- * +------------------------+--------------------------+-----------------+
- * | High-Level Description | Lower-Level Description  | Size (bytes)    |
- * +------------------------+--------------------------+-----------------+
- * | Header                 | Ring item header         | 8               |
- * +------------------------+--------------------------+-----------------+
- * | Body header            | Ring item body header    | 4 or 20         |
- * +------------------------+--------------------------+-----------------+
- * +------------------------+--------------------------+-----------------+
- * | Body size              | Number of bytes in body  | 4               |
- * +------------------------+--------------------------+-----------------+   
- * |                        | Fragment header          | 20              |
- * |                        | Ring item header         | 8               |
- * | Fragment #0            | Ring item body header    | 4 or 20         |
- * |                        | Ring item body           | Determined by   |
- * |                        |                          | Readout program | 
- * +------------------------+--------------------------+-----------------+
- * where Fragment #0's ring item body is a complete built event. Because this 
- * data was produced without the event builder correlating events, it contains
- * only a single fragment.
- * @note The expected pipe here is glom | evbfilter | stdintoring so it is 
- * imperitive that nothing else is put on stdout within this function. 
- * All debugging output _must_ go on stderr or data will be malformed in the 
- * ringbuffer!
+ * +------------------------+-------------------------- +-----------------+
+ * | High-Level Description | Lower-Level Description   | Size (bytes)    |
+ * +------------------------+-------------------------- +-----------------+
+ * | Built item header      | Ring item header          | 8               |
+ * +------------------------+-------------------------- +-----------------+
+ * | Built item body header | Ring item body header     | 4 or 20         |
+ * +------------------------+-------------------------- +-----------------+
+ * | Payload body size      | Number of bytes in body   | 4               |
+ * +------------------------+-------------------------- +-----------------+   
+ * |                        | Fragment header           | 20              |
+ * |                        | [x] Ring item header      | 8               |
+ * | Fragment               | [x] Ring item body header | 4 or 20         |
+ * |                        | [x] Ring item body        | Determined by   |
+ * |                        |                           | Readout program | 
+ * +------------------------+-------------------------- +-----------------+
+ * where the fragment contains pre-built data. The data we want to parse 
+ * out from the event and output are marked with the [x]'s. Since the `glom` 
+ * command generating this data is run with the `--nobuild` option, each ring 
+ * item contains only a single fragment, which is the built event from the 
+ * first event-building stage.
+ * @note Processing pipe is `glom | evbfilter | stdintoring`. Dumping data 
+ * besides ring items on stdout may lead to undefined behavior.
  * @throw std::runtime_error if data buffer malloc fails
  * @return int
  * @retval 0 Success
- * @retval 1 No data on stdin
+ * @retval 1 No data on stdin (also a valid return value)
  */
 int
 filterItem() {
-    int nread;
+    int readBytes;
     
-    // Every ring item has a header:
+    // Every ring item has a header containing the size of the item:
     
     RingItemHeader hdr;
-    nread = io::readData(STDIN_FILENO, &hdr, sizeof(RingItemHeader));
-    if (!nread) { // Ensure we actually read something
-	return 1;
-    }
+    readBytes = io::readData(STDIN_FILENO, &hdr, sizeof(RingItemHeader));
+    if (!readBytes) { return 1; } // Ensure we read something
     if (debug) {
 	std::cerr << "--------------------------------------------\n";
 	std::cerr << "built item hdr: type " << hdr.s_type
@@ -101,37 +104,43 @@ filterItem() {
     if (dataBytes > allocBytes) {
 	free(pData);
 	pData = (uint32_t*)malloc(dataBytes);
-	allocBytes = dataBytes;
 	if (!pData) {
-	    throw std::runtime_error("Failed to allocate data buffer!");
-	}
+	    std::stringstream msg;
+	    msg << "Failed to allocate data buffer size: " << dataBytes;
+	    throw std::runtime_error(msg.str());
+	} 
+	allocBytes = dataBytes;
     }
-    nread = io::readData(STDIN_FILENO, pData, dataBytes);
-    if (!nread) {
-	return 1;
-    }
+    readBytes = io::readData(STDIN_FILENO, pData, dataBytes);
+    if (!readBytes) { return 1; } // Ensure we read something
 
-    // Apply filter and output data. If its a PHYSCIS_EVENT, isolate the
+    // Apply filter and output data. If its a PHYSICS_EVENT, isolate the
     // original built event, otherwise just output the top-level ring item
     // header and data buffer as-is.
 
     uint32_t* p = pData; // First word
     
     if (hdr.s_type == PHYSICS_EVENT) {
-	// Skip body header, event size, fragment header:
+	// Skip body header, event size, fragment header. Note body header
+	// may be empty, in which case its a single uint32_t with a value
+	// of either 0 (v11) or sizeof(uint32_t) (v12):
+	uint32_t bodyHdrSize = *p;
 	if (debug) {
-	    BodyHeader* pBodyHdr = reinterpret_cast<BodyHeader*>(p);
-	    std::cerr << "built body hdr: size " << pBodyHdr->s_size
-		      << " ts " << pBodyHdr->s_timestamp
-		      << " sid " << pBodyHdr->s_sourceId
-		      << " barrier " << pBodyHdr->s_barrier << std::endl;
+	    if (bodyHdrSize == sizeof(BodyHeader)) {
+		BodyHeader* pBodyHdr = reinterpret_cast<BodyHeader*>(p);
+		std::cerr << "built body hdr: size " << pBodyHdr->s_size
+			  << " ts " << pBodyHdr->s_timestamp
+			  << " sid " << pBodyHdr->s_sourceId
+			  << " barrier " << pBodyHdr->s_barrier << std::endl;
+	    } else {
+		std::cerr << "no body header" << std::endl;
+	    }
 	}
-	p += sizeof(BodyHeader)/sizeof(uint32_t);
-	dataBytes -= sizeof(BodyHeader);
+	p += bodyHdrSize/sizeof(uint32_t);
+	dataBytes -= bodyHdrSize;
 	
 	if (debug) {
-	    uint32_t eventSize = *p;
-	    std::cerr << "event size " << eventSize << std::endl;
+	    std::cerr << "event size " << *p << std::endl;
 	}
 	p++;
 	dataBytes -= sizeof(uint32_t);
@@ -148,26 +157,32 @@ filterItem() {
 	
 	// Ring item header for the fragment to output:
 
-	RingItemHeader* pOrigHdr = reinterpret_cast<RingItemHeader*>(p);
 	if (debug) {
-	    std::cerr << "frag item hdr: type " << pOrigHdr->s_type
-		      << " size " << pOrigHdr->s_size << std::endl;
+	    RingItemHeader* pHdr = reinterpret_cast<RingItemHeader*>(p);
+	    std::cerr << "frag item hdr: type " << pHdr->s_type
+		      << " size " << pHdr->s_size << std::endl;
 	}
+	outputter.put(p, sizeof(RingItemHeader));
 	p += sizeof(RingItemHeader)/sizeof(uint32_t);
 	dataBytes -= sizeof(RingItemHeader);
 
-	BodyHeader* pOrigBodyHdr = reinterpret_cast<BodyHeader*>(p);
+	bodyHdrSize = *p;
 	if (debug) {
-	    std::cerr << "frag body hdr: size " << pOrigBodyHdr->s_size
-		      << " ts " << pOrigBodyHdr->s_timestamp
-		      << " sid " << pOrigBodyHdr->s_sourceId
-		      << " barrier " << pOrigBodyHdr->s_barrier << std::endl;
+	    if (bodyHdrSize = sizeof(BodyHeader)) {	
+		BodyHeader* pBodyHdr = reinterpret_cast<BodyHeader*>(p);
+		std::cerr << "frag body hdr: size " << pBodyHdr->s_size
+			  << " ts " << pBodyHdr->s_timestamp
+			  << " sid " << pBodyHdr->s_sourceId
+			  << " barrier " << pBodyHdr->s_barrier
+			  << std::endl;
+	    
+	    } else {	    
+		std::cerr << "empty frag body hdr" << std::endl;
+	    }
 	}
-	p += sizeof(BodyHeader)/sizeof(uint32_t);
-	dataBytes -= sizeof(BodyHeader);
-	
-	outputter.put(pOrigHdr, sizeof(RingItemHeader));
-	outputter.put(pOrigBodyHdr, sizeof(BodyHeader));	
+	outputter.put(p, bodyHdrSize);
+	p += bodyHdrSize/sizeof(uint32_t);
+	dataBytes -= bodyHdrSize;
     } else {
 	outputter.put(&hdr, sizeof(RingItemHeader));
     }
@@ -227,8 +242,7 @@ main(int argc, char* argv[])
     try {
 	size_t ct = 0;
 	while (1) {
-	    filterItem();
-	    
+	    filterItem();	    
 	    ct++;
 	    if (count && ct == count) {
 		break;
@@ -237,10 +251,12 @@ main(int argc, char* argv[])
     }
     catch (const int& e) {
 	std::cerr << "errno error: " << e << ": " << strerror(e) << std::endl;
+	free(pData);
 	return EXIT_FAILURE;
     }
     catch (const std::runtime_error& e) {
 	std::cerr << "runtime error: " << e.what() << std::endl;
+	free(pData);
 	return EXIT_FAILURE;
     }
 

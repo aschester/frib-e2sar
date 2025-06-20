@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
-
 ##
 # @file run_recv_pipe.py
 # @details Run receive-side pipe and eventlog for FRIB-E2SAR workflows
 #
 
 ##
-# @todo (ASC 5/21/25): More detailed argument help. For example, if --glom 0
-# and --ddas-raw are both specified, the latter argument is ignored.
-#
-##
-# @todo (ASC 6/4/25): evb sink and evtlog source may be different if filtering.
+# @todo (ASC 6/18/25): Specify cmdline arg data types.
 #
 
 import argparse
@@ -101,6 +96,9 @@ def main():
     parser.add_argument("-n", "--number-of-sources",
                         help="number of data sources for event builder",
                         default=1)
+    parser.add_argument("-s", "--source",
+                        help="reassembled source ringbuffer basename",
+                        default="reas")
     parser.add_argument("-S", "--sink",
                         help="ringbuffer sink for built event data (localhost)",
                         default="frib_e2sar_evb")
@@ -114,68 +112,84 @@ def main():
                         help="correlation window for building events in "
                         "nanoseconds (ignored if '--glom 0')",
                         default=1000)
+    parser.add_argument("--logdata", type=int,
+                        help="log data from sink ringbuffer yes/no = 1/0",
+                        default=1)
     parser.add_argument("--segment-size",
                         help="output file segment size (e.g., 2g = 2 GB)",
                         default="1000g")
-    parser.add_argument("--ddas-raw",
+    parser.add_argument("--ddasraw",
                         action="store_true",
                         help="data source is NSCLDAQ 12 raw DDAS data")
     args = parser.parse_args()
 
+    ddasraw = 1 if args.ddasraw else 0
+    
     # Signal handler for this script:
     
     signal.signal(signal.SIGINT, handler)
     
     ##
-    # Event builder:
-    #
-
-    ddasraw = 1 if args.ddas_raw else 0
-    evbcmd = (f"{args.startup} -sink {args.sink} -build {args.glom} "
-              f"-glomdt {args.glomdt} -window {args.window} "
-              f"-ddasraw {ddasraw}")
-    print(f"Running evtbuild command: {evbcmd}")
-
-    ##
-    # eventlog to write data to a sink:
-    #
-    
-    logcmd = (f"{daqbin}/eventlog -s tcp://localhost/{args.sink} "
-              f"-n {args.number_of_sources} -S {args.segment_size} "
-              f"--oneshot")
-    print(f"Running eventlog command: {logcmd}")
-
-    ##
     # Processing loop:
     #
-
-    #while True:
+    
     create_sink(args.sink) # Make sure the sink exists
+    
+    evbcmd = (f"{args.startup} -source {args.source} -sink {args.sink} "
+              f"-build {args.glom} -glomdt {args.glomdt} "
+              f"-window {args.window} -ddasraw {ddasraw}")
+    print(f"Running evtbuild command: {evbcmd}")
+    
     evbproc = subprocess.Popen(shlex.split(evbcmd), stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, text=True)
-    print("Recording run...",end="")
-    sys.stdout.flush()
-    logproc = subprocess.run(shlex.split(logcmd), capture_output=True,
-                             text=True)
+
+    # Poll the process for ~few seconds to ensure its started properly:
+    pollct = 0
+    while pollct < 5:
+        evbproc.poll()
+        if evbproc.returncode:
+            print(f"ERROR: {evbcmd} failed to start with returncode "
+                  f"{evbproc.returncode}")
+            print(f"evbproc process output:")
+            for line in evbproc.stdout:
+                print(line)
+            sys.exit(1)
+        pollct += 1
+        time.sleep(1)
     
-    try:
-        logproc.check_returncode()
-    except subprocess.CalledProcessError as e:
-        print(f"ERROR: {e} {logproc.stdout} {logproc.stderr}")
-        print("Killing evb...")
-        evbproc.kill() # Kill off pipe if the event logger fails
-        evbproc.wait()
-        sys.exit(1)
+    ##
+    # Start and run pipeline to write data to a sink, if enabled:
+    #
+
+    if args.logdata:
+        logcmd = (f"{daqbin}/eventlog -s tcp://localhost/{args.sink} "
+                  f"-n {args.number_of_sources} -S {args.segment_size} "
+                  f"--oneshot")
+        print(f"Running eventlog command: {logcmd}")
+        print("Recording run...",end="")
+        sys.stdout.flush()
+        logproc = subprocess.run(shlex.split(logcmd), capture_output=True,
+                                 text=True)
+        
+        try:
+            logproc.check_returncode()
+        except subprocess.CalledProcessError as e:
+            print(f"ERROR: {e} {logproc.stdout} {logproc.stderr}")
+            print("Killing evb...")
+            evbproc.kill() # Kill off pipe if the event logger fails
+            evbproc.wait()
+            sys.exit(1)
+        else:
+            print("done")
+            sys.stdout.flush()            
+            print(f"{logcmd} completed with returncode {logproc.returncode}")
+            time.sleep(2)            
+            evbproc.kill()
+            evbproc.wait()
+            print(f"{evbcmd} completed with returncode {evbproc.returncode}")
     else:
-        print("done")
-        sys.stdout.flush()            
-        print(f"{logcmd} completed with returncode {logproc.returncode}")
-        time.sleep(2)            
-        evbproc.kill()
+        print("Not recording data...")
         evbproc.wait()
-        print(f"{evbcmd} completed with returncode {evbproc.returncode}")
-        time.sleep(2)
-        #print("Restarting evb pipeline...")
             
 if __name__ == "__main__":
     main()

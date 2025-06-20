@@ -189,5 +189,22 @@ namespace frib_e2sar {
 	std::cout <<"\tmin_factor\t" << flags.min_factor << std::endl;
 	std::cout <<"\tmax_factor\t" << flags.max_factor << std::endl;
     }
+
+    ufmt::FormatSelector::SupportedVersions
+    mapVersion(int vsn)
+    {
+	switch (vsn) {
+	case 12:
+	    return ufmt::FormatSelector::v12;
+	case 11:
+	    return ufmt::FormatSelector::v11;
+	case 10:
+	    throw std::invalid_argument(
+		"NSCLDAQ 10 is not currently supported");
+	default:
+	    throw std::invalid_argument(
+		"Invalid DAQ format version specifier");
+	}
+    }
     
 } // end namespace frib_e2sar

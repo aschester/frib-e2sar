@@ -68,6 +68,8 @@
 using namespace e2sar;
 using namespace frib_e2sar;
 using namespace ufmt;
+namespace po = boost::program_options;
+namespace ch = boost::chrono;
 
 const double MAX_FILL_PCT = 0.9; //!< Send buffer minimum fill percent
 
@@ -271,7 +273,7 @@ Sender::operator()()
 	std::cerr << "Failed to start Segmenter: Error code "
 		  << rvoas.error().code() << " " << rvoas.error().message()
 		  << std::endl;
-        return -1;
+        return EXIT_FAILURE;
     } else {
 	std::cout << "Segmenter started OK\n";
 	m_threadsRunning = true;
@@ -279,7 +281,7 @@ Sender::operator()()
 
     // Sleep to allow small number of frames to leave:
     
-    boost::chrono::seconds duration(1);
+    ch::seconds duration(1);
     boost::this_thread::sleep_for(duration);
 
     // Create our buffer pool:
@@ -292,14 +294,14 @@ Sender::operator()()
     //
 
     EventNum_t evtNumber = 0;  // Iterate on send
-    u_int16_t  entropy = 0;    // Random
-    size_t     totalBytes = 0; // Total bytes sent
     bool       done = false;
 
-    auto start = boost::chrono::high_resolution_clock::now();
+    m_totalBytes = 0;
+
+    auto start = ch::high_resolution_clock::now();
     
     while (!done) {
-	auto now = boost::chrono::high_resolution_clock::now();
+	auto now = ch::high_resolution_clock::now();
 	
 	if (!m_pEvtBufQueue->pop(evtBuf)) {
 	    evtBuf = static_cast<u_int8_t*>(pEvtBufPool->malloc());
@@ -310,49 +312,36 @@ Sender::operator()()
 	u_int8_t* p = evtBuf;    // Pointer to first byte
 	size_t currentBytes = 0; // Bytes in send buffer
 
+	uint32_t lastType = 0;
 	while (currentBytes < m_maxBufBytes) {
 	    std::unique_ptr<CRingItem> pItem(m_pSource->getItem());
 	    if (!pItem.get()) {
-		done = true;  // End of source
+		done = true;  // End of e.g., file source
 		break;
 	    }
-	    uint32_t itemSize = pItem->size();
-	    memcpy(p, pItem->getItemPointer(), itemSize);
-	    currentBytes += itemSize;
-	    p += itemSize; // Prepare to copy next item
+	    uint32_t size = pItem->size();
+	    memcpy(p, pItem->getItemPointer(), size);
+	    currentBytes += size;
+	    p += size; // Prepare to copy next item
+	    
+	    uint32_t type = pItem->type();
+	    if (type == END_RUN) { // Rather a timeout, but...
+		sendBuffer(evtBuf, currentBytes, evtNumber);
+	    }
 	} // End buffer packing
-	
-	auto rvseg = m_pSegmenter->addToSendQueue(evtBuf, currentBytes,
-						  evtNumber, m_dataId, entropy,
-						  &senderCallback, evtBuf);
-	if (rvseg.has_error()) {
-	    std::cerr << "Failed to add to send queue: "
-		      << rvseg.error().message()
-		      << " with error code " << rvseg.error().code()
-		      << " trying to continue..."
-		      << std::endl;
-	    continue;
-	}
 
-	totalBytes += currentBytes;
+	// If we have data, send it:
 	
-	if (m_debug) {
-	    // dumpBuffer(evtBuf, currentBytes);
-	    std::cout << "Sent event:" << std::endl;
-	    std::cout << "\tevtNumber:      " << evtNumber << std::endl;
-	    std::cout << "\tdataId:         " << m_dataId << std::endl;
-	    std::cout << "\tevtBufSize:     " << currentBytes << std::endl;
-	    std::cout << "\tmaxBufBytes:    " << m_maxBufBytes << std::endl;
-	    std::cout << "\tevtBufCapacity: " << m_evtBufSize << std::endl;
-	    std::cout << "\ttotalBytes:     " << totalBytes << std::endl;
-	}
+	if (currentBytes > 0) {
+	    sendBuffer(evtBuf, currentBytes, evtNumber);
+	} 
 	
-	auto until = now + boost::chrono::microseconds(interEventSleepUsec);
+	auto until = now + ch::microseconds(interEventSleepUsec);
 	if (now > until) {
 	    std::cerr << "Clock overrun, either event buffer length too "
 		      << "short or requested sending rate too high"
 		      << std::endl;
-	    return -1;
+	    return EXIT_FAILURE;
 	}
 
 	// Free the backlog of unused buffers:
@@ -375,7 +364,7 @@ Sender::operator()()
 	boost::this_thread::sleep_until(until);
     }
 
-    auto dt = boost::chrono::high_resolution_clock::now() - start;
+    auto dt = ch::high_resolution_clock::now() - start;
     
     // Done sending events, report:
 
@@ -395,14 +384,14 @@ Sender::operator()()
     }
     
     std::cout << "Send loop runtime: "
-	      << boost::chrono::duration<double>(dt)
+	      << ch::duration<double>(dt)
 	      << std::endl;
     
     // Cleaup pool:
     
     pEvtBufPool->purge_memory();
 	  
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 /**
@@ -428,7 +417,7 @@ Sender::shutdown()
 {
     std::cout << "Stopping sender threads..." << std::endl;
     m_threadsRunning = false;
-    boost::chrono::milliseconds duration(1000);
+    ch::milliseconds duration(1000);
     boost::this_thread::sleep_for(duration);
 
     if (m_pSegmenter) {
@@ -448,21 +437,6 @@ Sender::shutdown()
     }
 
     boost::this_thread::sleep_for(duration);
-}
-
-FormatSelector::SupportedVersions
-Sender::mapVersion(int vsn)
-{
-    switch (vsn) {
-    case 12:
-	return FormatSelector::v12;
-    case 11:
-	return FormatSelector::v11;
-    case 10:
-	throw std::invalid_argument("NSCLDAQ 10 is not currently supported");
-    default:
-	throw std::invalid_argument("Invalid DAQ format version specifier");
-    }
 }
 
 DataSource*
@@ -497,6 +471,46 @@ Sender::makeDataSource(RingItemFactoryBase* pFactory,
 	msg += proto + "'";
 	throw std::invalid_argument(msg);
     }
+}
+
+/**
+ * @details
+ * Add data to the Segmenter send queue in a non-blocking manner. The entropy 
+ * value can be used to control the UDP port to which data are sent, e.g., 
+ * setting dataId = entropy ensures all segments with the same dataId go to 
+ * the same port; a random value will randomize the destination UDP port.
+ */
+int
+Sender::sendBuffer(u_int8_t* pData, size_t bytes, EventNum_t evtNum)
+{
+    u_int16_t entropy = 0;
+    
+    auto rvseg = m_pSegmenter->addToSendQueue(pData, bytes, evtNum,
+					      m_dataId, entropy,
+					      &senderCallback, pData);
+    if (rvseg.has_error()) {
+	std::cerr << "Failed to add to send queue: "
+		  << rvseg.error().message()
+		  << " with error code " << rvseg.error().code()
+		  << " trying to continue..."
+		  << std::endl;
+	return EXIT_FAILURE;
+    }
+
+    m_totalBytes += bytes;
+	
+    if (m_debug) {
+	// dumpBuffer(evtBuf, currentBytes);
+	std::cout << "Sent event:" << std::endl;
+	std::cout << "\tevtNumber:      " << evtNum << std::endl;
+	std::cout << "\tdataId:         " << m_dataId << std::endl;
+	std::cout << "\tevtBufSize:     " << bytes << std::endl;
+	std::cout << "\tmaxBufBytes:    " << m_maxBufBytes << std::endl;
+	std::cout << "\tevtBufCapacity: " << m_evtBufSize << std::endl;
+	std::cout << "\ttotalBytes:     " << m_totalBytes << std::endl;
+    }
+
+    return EXIT_SUCCESS;
 }
 
 void

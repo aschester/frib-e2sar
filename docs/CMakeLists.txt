@@ -5,6 +5,7 @@ set(DOXYGEN_HTML_OUTPUT ${CMAKE_BINARY_DIR}/docs/html)
 set(DOXYGEN_USE_MDFILE_AS_MAINPAGE "${CMAKE_SOURCE_DIR}/README.md")
 set(DOXYGEN_EXCLUDE_PATTERNS
   *.py
+  *.sh
   ${CMAKE_SOURCE_DIR}/UnifiedFormat/*
   ${CMAKE_BINARY_DIR}/UnifiedFormat/*
   ${CMAKE_BINARY_DIR}/fmtconfig.h

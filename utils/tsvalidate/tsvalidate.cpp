@@ -73,9 +73,10 @@
 
 using namespace ufmt;
 
-uint64_t currentTs = 0; //!< Timestamp of current event
-uint64_t prevTs = 0;    //!< Timestamp of previous event
-uint64_t counter = 0;   //!< Fragment counter
+static uint64_t currentTs = 0; //!< Timestamp of current event
+static uint64_t prevTs = 0;    //!< Timestamp of previous event
+static int nOutOfOrder = 0;    //!< Number of out-of-order timestamps
+static uint64_t counter = 0;   //!< Fragment counter
 
 // Map of exclusion type strings to type integers:
 
@@ -151,7 +152,7 @@ processItem(CRingItem* pItem, RingItemFactoryBase& factory)
 		factory.makeDataFormatItem(*pItem)
 		);
 	}
-	catch (std::bad_cast e) {
+	catch (const std::bad_cast& e) {
 	    throw std::logic_error("Unable to dump a data format item... "
 				   "likely you've specified the wrong "
 				   "--format");
@@ -168,15 +169,15 @@ processItem(CRingItem* pItem, RingItemFactoryBase& factory)
 	    std::cerr << "Timestamps not increasing!!! Fragment number "
 		      << counter << " current: " << currentTs
 		      << " prev: " << prevTs << std::endl;
+	    nOutOfOrder++;
 	}
 	prevTs = currentTs;
+	counter++;
     }
     break;
     default:
 	break;
     }
-
-    counter++;
 }
     
 /**
@@ -257,11 +258,21 @@ makeDataSource(RingItemFactoryBase* pFactory, const std::string& strUrl)
         catch (CException& e) {
             throw std::invalid_argument(e.ReasonText());
         }
-    } else {
+    } else if (protocol == "file") {
         std::string path = uri.getPath();
 	// Need it to last past block:
-        std::ifstream& in(*(new std::ifstream(path.c_str()))); 
+        std::ifstream& in(*(new std::ifstream(path.c_str())));
+	if (in.is_open()) {
         return new StreamDataSource(pFactory, in);
+	} else {
+	    std::string msg("Failed to create input stream from ");
+	    msg += path;
+	    throw std::runtime_error(msg);
+	}
+    } else {
+	std::string msg("Unrecognized protocol: ");
+	msg += protocol;
+	throw std::runtime_error(msg);
     }
 }
 
@@ -384,14 +395,16 @@ int main(int argc, char** argv)
             }
 	}
 	std::cout << "... Done!" << std::endl;
+	std::cout << "Found " << nOutOfOrder << " out-of-order timestamps in "
+		  << counter << " physics events" << std::endl;
     }
-    catch (std::exception& e) {
-        std::cerr << e.what() << std::endl;
+    catch (const std::exception& e) {
+        std::cerr << "ERROR: " << e.what() << std::endl;
         cmdline_parser_print_help();
         std::exit(EXIT_FAILURE);
     }
-    catch (CRangeError& e) {
-	std::cerr << e.ReasonText() << std::endl;
+    catch (const CRangeError& e) {
+	std::cerr << "ERROR: " << e.ReasonText() << std::endl;
 	std::exit(EXIT_FAILURE);
     }
     

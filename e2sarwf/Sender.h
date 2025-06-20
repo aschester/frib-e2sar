@@ -32,10 +32,10 @@
 #include <memory>
 #include <vector>
 
+#include <e2sarHeaders.hpp>
+
 #include <boost/program_options.hpp>
 #include <boost/lockfree/lockfree_forward.hpp>
-
-#include <NSCLDAQFormatFactorySelector.h>
 
 namespace e2sar {
     class Segmenter;
@@ -45,7 +45,6 @@ class DataSource;
 namespace ufmt {
     class RingItemFactoryBase;
 }
-namespace po = boost::program_options;
 
 /**
  * @class Sender
@@ -67,6 +66,7 @@ private:
     size_t m_nEvents;      //!< Number of events to send (0 until eof or SIGINT)
     size_t m_evtBufSize;   //!< Send buffer size in bytes
     size_t m_maxBufBytes;  //!< Max bytes to fill before sending
+    size_t m_totalBytes;   //!< Total bytes sent
     bool m_threadsRunning; //!< True when send loop is active
     bool m_debug;          //!< Output debugging information
     bool m_verbose;        //!< Enable verbose output of configuration, etc.
@@ -89,7 +89,7 @@ public:
      * @throw std::runtime_error Cannot add sender to Load Balancer
      * @throw Any E2SAR errors, etc. back to caller
      */ 
-    Sender(po::variables_map& vm);
+    Sender(boost::program_options::variables_map& vm);
     /**
      * @brief Destructor
      */
@@ -98,8 +98,8 @@ public:
     /**
      * @brief Run the event loop
      * @return int
-     * @retval 0 Success
-     * @retval -1 Failure (hopefully with contextual error message on stderr)
+     * @retval EXIT_SUCCESS Success
+     * @retval EXIT_FAILURE Failure, hopefully with error message on stderr
      */
     int operator()();
 
@@ -123,13 +123,6 @@ private:
     /** @brief Shutdown the sender. Remove senders. Stop threads. */
     void shutdown();
     /**
-     * @brief Map the version we get from the command line to a factory version
-     * @param vsn Format the user requested
-     * @throw std::invalid_argument Bad format version
-     * @return Factory version ID (from the enum)
-     */
-    ufmt::FormatSelector::SupportedVersions mapVersion(int vsn);
-    /**
      * @brief Parse the URI of the source and based on the parse create the 
      * underlying connection. Create the correct concrete instance of 
      * DataSource given all that
@@ -142,6 +135,16 @@ private:
      */
     DataSource* makeDataSource(ufmt::RingItemFactoryBase* pFactory,
 			       const std::string& strUrl);
+    /**
+     * @brief Send data using the E2SAR Segmenter.
+     * @param pData Data buffer to send
+     * @param bytes Size of data buffer in bytes
+     * @param evtNum Event number
+     * @return int
+     * @retval EXIT_SUCCESS Success
+     * @retval EXIT_FAILURE Failure, hopefully with error message on stderr
+     */
+    int sendBuffer(u_int8_t* pData, size_t bytes, e2sar::EventNum_t evtNum);
     /** 
      * @brief Static callback function for Segmenter non-blocking send using 
      * `addToSendQueue()`

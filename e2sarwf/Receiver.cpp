@@ -54,6 +54,8 @@
 using namespace e2sar;
 using namespace frib_e2sar;
 using namespace ufmt;
+namespace po = boost::program_options;
+namespace ch = boost::chrono;
 
 Receiver* Receiver::m_pInstance = nullptr;
 
@@ -157,7 +159,7 @@ Receiver::operator()()
      	t.join();
     }
     
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 /**
@@ -183,7 +185,7 @@ Receiver::shutdown()
 {
     std::cout << "Stopping threads" << std::endl;
     m_threadsRunning = false;
-    boost::chrono::milliseconds duration(1000);
+    ch::milliseconds duration(1000);
     boost::this_thread::sleep_for(duration);
     
     if (m_pReassembler) {
@@ -199,21 +201,6 @@ Receiver::shutdown()
     boost::this_thread::sleep_for(duration);
 }
 
-FormatSelector::SupportedVersions
-Receiver::mapVersion(int vsn)
-{
-    switch (vsn) {
-    case 12:
-	return FormatSelector::v12;
-    case 11:
-	return FormatSelector::v11;
-    case 10:
-	throw std::invalid_argument("NSCLDAQ 10 is not currently supported");
-    default:
-	throw std::invalid_argument("Invalid DAQ format version specifier");
-    }
-}
-
 /**
  * @details
  * Typically to be called as part of a monitoring thread. There is no 
@@ -226,7 +213,7 @@ Receiver::statsThread()
     std::vector<boost::tuple<EventNum_t, u_int16_t, size_t>> lostEvents;
 
     while (m_threadsRunning) {
-	auto now = boost::chrono::high_resolution_clock::now();
+	auto now = ch::high_resolution_clock::now();
 	
         auto stats = m_pReassembler->getStats();
 	
@@ -280,7 +267,7 @@ Receiver::statsThread()
 		      << lostEvents.size() << std::endl;
 	}
 
-        auto until = now + boost::chrono::milliseconds(2000);
+        auto until = now + ch::milliseconds(2000);
         boost::this_thread::sleep_until(until);
     }  
 }
@@ -307,26 +294,26 @@ Receiver::prepareToReceive()
     if (rvhn.has_error()) {
 	std::cerr << "Failed to get hostname: " << rvhn.error().message()
 		  << " with error code " << rvhn.error().code() << std::endl;
-	return -1;
+	return EXIT_FAILURE;
     }
 
     auto rvrw = m_pReassembler->registerWorker(rvhn.value());
     if (rvrw.has_error()) {
 	std::cerr << "Unable to register worker: " << rvrw.error().message()
 		  << " with error code " << rvrw.error().code() << std::endl;
-        return -1;
+        return EXIT_FAILURE;
     }
 
-    boost::this_thread::sleep_for(boost::chrono::seconds(1));
+    boost::this_thread::sleep_for(ch::seconds(1));
     
     auto rvoas = m_pReassembler->openAndStart();
     if (rvoas.has_error()) {
      	std::cerr << "Unable to start Reassembler: " << rvoas.error().message()
 		  << " with error code " << rvoas.error().code() << std::endl;
-	return -1;
+	return EXIT_FAILURE;
     }
     
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 int
@@ -341,15 +328,15 @@ Receiver::receiveEvents(DataSink* pSink)
     u_int16_t  dataId;          // Data source Id
     size_t     totalBytes = 0;  // Total bytes written
     
-    auto start = boost::chrono::steady_clock::now();
+    auto start = ch::steady_clock::now();
     
     while (m_threadsRunning) {
 	auto rv = m_pReassembler->getEvent(&evtBuf, &evtBufSize,
 					   &evtNum, &dataId);
 
-	auto now = boost::chrono::steady_clock::now();
+	auto now = ch::steady_clock::now();
 	if (m_duration != 0
-	    && (now - start) > boost::chrono::seconds(m_duration)) {
+	    && (now - start) > ch::seconds(m_duration)) {
 	    break;
 	}
 	
@@ -357,7 +344,7 @@ Receiver::receiveEvents(DataSink* pSink)
 	    std::cerr << "Reassembler failed to get event: "
 		      << rv.error().message() << " with error code "
 		      << rv.error().code() << std::endl;
-	    return -1;
+	    return EXIT_FAILURE;
 	}
 
 	if (rv.value() == -1) { // Queue is empty
@@ -381,7 +368,7 @@ Receiver::receiveEvents(DataSink* pSink)
 	evtBuf = nullptr;
     }
     
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 /**
