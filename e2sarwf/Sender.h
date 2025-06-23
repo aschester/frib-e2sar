@@ -67,7 +67,6 @@ private:
     u_int16_t m_dataId;      //!< Data Id
     size_t m_nEvents;        //!< Number of events to send (0: all)
     size_t m_evtBufSize;     //!< Send buffer size in bytes
-    size_t m_maxBufBytes;    //!< Max bytes to fill before sending
     size_t m_totalBytes;     //!< Total bytes sent
     bool m_threadsRunning;   //!< True when send loop is active
     bool m_debug;            //!< Output debugging information

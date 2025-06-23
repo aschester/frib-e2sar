@@ -71,8 +71,6 @@ using namespace ufmt;
 namespace po = boost::program_options;
 namespace ch = boost::chrono;
 
-const double MAX_FILL_PCT = 0.9; //!< Send buffer minimum fill percent
-
 Sender* Sender::m_pInstance = nullptr;
 
 /**
@@ -90,7 +88,6 @@ Sender::Sender(po::variables_map& vm) :
     m_dataId(vm["dataid"].as<u_int16_t>()),
     m_nEvents(vm["num"].as<size_t>()),
     m_evtBufSize(vm["bufsize"].as<size_t>()),
-    m_maxBufBytes(vm["bufsize"].as<size_t>()*MAX_FILL_PCT),
     m_threadsRunning(false),
     m_debug(vm["debug"].as<bool>()),
     m_verbose(vm["verbose"].as<bool>())
@@ -220,7 +217,6 @@ Sender::Sender(po::variables_map& vm) :
 	std::cout << "Data ID:     " << m_dataId << std::endl;
 	std::cout << "Source ID:   " << srcId << std::endl;
 	std::cout << "evtBufSize:  " << m_evtBufSize << " bytes" << std::endl;
-	std::cout << "maxBufBytes: " << m_maxBufBytes << " bytes " << std::endl;
 	std::cout << "sendRate:    " << m_rateGbps << " Gbps" << std::endl;
 	std::cout << "Queue size:  " << queueSize << std::endl;
 	std::cout << "E2SAR selected optimizations:  "
@@ -286,7 +282,7 @@ Sender::operator()()
     ch::seconds duration(1);
     boost::this_thread::sleep_for(duration);
 
-    // Create our buffer pool:
+    // Create our buffer pool and get the initial data buffer:
 	
     auto pEvtBufPool = std::make_unique<boost::pool<>>(m_evtBufSize);
     u_int8_t* evtBuf{nullptr}; // Buffer from pool - fill and send
@@ -295,37 +291,47 @@ Sender::operator()()
     // Send loop
     //
 
-    auto start = ch::high_resolution_clock::now();
     bool done = false;
     m_totalBytes = 0;
-    
+    std::unique_ptr<CRingItem> pItem;        // The current item
+    std::unique_ptr<CRingItem> pItemPending; // Pending due to buffer cap
+
+    auto start = ch::high_resolution_clock::now();
+
     while (!done) {
 	auto now = ch::high_resolution_clock::now();
-	
+
 	if (!m_pEvtBufQueue->pop(evtBuf)) {
 	    evtBuf = static_cast<u_int8_t*>(pEvtBufPool->malloc());
 	}
-
-	// Pack ring items into the event buffer:
+	
+	// Pack ring items into the event buffer
 
 	u_int8_t* p = evtBuf;    // Pointer to first byte
 	size_t currentBytes = 0; // Bytes in send buffer
-
-	uint32_t lastType = 0;
-	while (currentBytes < m_maxBufBytes) {
-	    std::unique_ptr<CRingItem> pItem(m_pSource->getItem());
-	    if (!pItem.get()) {
-		done = true;		
-		break;
+	
+	while (currentBytes < m_evtBufSize) {
+	    if (pItemPending) {
+		pItem = std::move(pItemPending);
+	    } else {
+		pItem = std::unique_ptr<CRingItem>(m_pSource->getItem());
+		if (!pItem.get()) {
+		    if (m_totalBytes) {
+			done = true;
+		    }
+		    break;
+		}
 	    }
 	    uint32_t size = pItem->size();
+	    if (currentBytes + size > m_evtBufSize) { // Buffer full, send it
+		pItemPending = std::move(pItem);
+		break;
+	    }
 	    memcpy(p, pItem->getItemPointer(), size);
 	    currentBytes += size;
 	    p += size; // Prepare to copy next item
 	} // End buffer packing
 
-	// If we have data, send it:
-	
 	sendBuffer(evtBuf, currentBytes);
 
 	// Check if we've hit a send limit:
@@ -355,6 +361,10 @@ Sender::operator()()
     }
 
     auto dt = ch::high_resolution_clock::now() - start;
+
+    // Sleep to ensure last few frames can leave:
+    
+    boost::this_thread::sleep_for(duration);
     
     // Done sending events, report:
 
@@ -501,7 +511,6 @@ Sender::sendBuffer(u_int8_t* pData, size_t bytes)
 	std::cout << "\tevtNumber:      " << m_evtNumber << std::endl;
 	std::cout << "\tdataId:         " << m_dataId << std::endl;
 	std::cout << "\tevtBufSize:     " << bytes << std::endl;
-	std::cout << "\tmaxBufBytes:    " << m_maxBufBytes << std::endl;
 	std::cout << "\tevtBufCapacity: " << m_evtBufSize << std::endl;
 	std::cout << "\ttotalBytes:     " << m_totalBytes << std::endl;
     }
