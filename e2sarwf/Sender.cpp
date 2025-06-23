@@ -13,10 +13,10 @@
              Michigan State University
              East Lansing, MI 48824-1321
 
-     Author note: This code is heavily based on e2sar_perf.cpp provided as 
-                  an example by the E2SAR collaboration. The source code and 
-		  lisence for the E2SAR collaboration software can be found 
-		  at: https://github.com/JeffersonLab/E2SAR
+     Author note: This code draws heavily from e2sar_perf.cpp which was 
+                  written by the E2SAR collaboration. The source code and 
+                  license for the E2SAR collaboration software can be 
+                  found at: https://github.com/JeffersonLab/E2SAR
 		  --ASC 5/1/25
 */
 
@@ -85,6 +85,8 @@ Sender* Sender::m_pInstance = nullptr;
  */
 Sender::Sender(po::variables_map& vm) :
     m_rateGbps(vm["rate"].as<float>()),
+    m_evtNumber(0),
+    m_timeout(vm["timeout"].as<unsigned long>()),
     m_dataId(vm["dataid"].as<u_int16_t>()),
     m_nEvents(vm["num"].as<size_t>()),
     m_evtBufSize(vm["bufsize"].as<size_t>()),
@@ -293,12 +295,9 @@ Sender::operator()()
     // Send loop
     //
 
-    EventNum_t evtNumber = 0;  // Iterate on send
-    bool       done = false;
-
-    m_totalBytes = 0;
-
     auto start = ch::high_resolution_clock::now();
+    bool done = false;
+    m_totalBytes = 0;
     
     while (!done) {
 	auto now = ch::high_resolution_clock::now();
@@ -316,32 +315,23 @@ Sender::operator()()
 	while (currentBytes < m_maxBufBytes) {
 	    std::unique_ptr<CRingItem> pItem(m_pSource->getItem());
 	    if (!pItem.get()) {
-		done = true;  // End of e.g., file source
+		done = true;		
 		break;
 	    }
 	    uint32_t size = pItem->size();
 	    memcpy(p, pItem->getItemPointer(), size);
 	    currentBytes += size;
 	    p += size; // Prepare to copy next item
-	    
-	    uint32_t type = pItem->type();
-	    if (type == END_RUN) { // Rather a timeout, but...
-		sendBuffer(evtBuf, currentBytes, evtNumber);
-	    }
 	} // End buffer packing
 
 	// If we have data, send it:
 	
-	if (currentBytes > 0) {
-	    sendBuffer(evtBuf, currentBytes, evtNumber);
-	} 
-	
-	auto until = now + ch::microseconds(interEventSleepUsec);
-	if (now > until) {
-	    std::cerr << "Clock overrun, either event buffer length too "
-		      << "short or requested sending rate too high"
-		      << std::endl;
-	    return EXIT_FAILURE;
+	sendBuffer(evtBuf, currentBytes);
+
+	// Check if we've hit a send limit:
+
+	if (m_nEvents != 0 && m_evtNumber == m_nEvents) {
+	    done = true;
 	}
 
 	// Free the backlog of unused buffers:
@@ -350,17 +340,17 @@ Sender::operator()()
 	while (m_pEvtBufQueue->pop(item)) {
 	    pEvtBufPool->free(item);
 	}
-
-	// Done with this iteration:
-	
-	evtNumber++;
-
-	// Check if we've hit a send limit:
-
-	if (m_nEvents != 0 && evtNumber == m_nEvents) { done = true; }
 	
 	// Wait to send next event:
-    
+
+	auto until = now + ch::microseconds(interEventSleepUsec);
+	if (now > until) {
+	    std::cerr << "Clock overrun, either event buffer length too "
+		      << "short or requested sending rate too high"
+		      << std::endl;
+	    return EXIT_FAILURE;
+	}
+	
 	boost::this_thread::sleep_until(until);
     }
 
@@ -455,7 +445,7 @@ Sender::makeDataSource(RingItemFactoryBase* pFactory,
     
     if (proto == "tcp" || proto == "ring") {
 	CRingBuffer* pRing = CRingAccess::daqConsumeFrom(strUrl);
-	return new RingDataSource(pFactory, *pRing);
+	return new RingDataSource(pFactory, *pRing, m_timeout);
     } else if (proto == "file") {
         std::string path = uri.getPath();
 	// Need it to last past block:
@@ -479,13 +469,19 @@ Sender::makeDataSource(RingItemFactoryBase* pFactory,
  * value can be used to control the UDP port to which data are sent, e.g., 
  * setting dataId = entropy ensures all segments with the same dataId go to 
  * the same port; a random value will randomize the destination UDP port.
+ * Entropy of zero (0) is a special case where the Segmenter provides its own
+ * random entropy.
  */
 int
-Sender::sendBuffer(u_int8_t* pData, size_t bytes, EventNum_t evtNum)
-{
+Sender::sendBuffer(u_int8_t* pData, size_t bytes)
+{   
+    if (!bytes) { // No data, so we just return
+	return EXIT_SUCCESS;
+    }
+    
     u_int16_t entropy = 0;
     
-    auto rvseg = m_pSegmenter->addToSendQueue(pData, bytes, evtNum,
+    auto rvseg = m_pSegmenter->addToSendQueue(pData, bytes, m_evtNumber,
 					      m_dataId, entropy,
 					      &senderCallback, pData);
     if (rvseg.has_error()) {
@@ -500,15 +496,17 @@ Sender::sendBuffer(u_int8_t* pData, size_t bytes, EventNum_t evtNum)
     m_totalBytes += bytes;
 	
     if (m_debug) {
-	// dumpBuffer(evtBuf, currentBytes);
+	// dumpBuffer(pData, bytes);
 	std::cout << "Sent event:" << std::endl;
-	std::cout << "\tevtNumber:      " << evtNum << std::endl;
+	std::cout << "\tevtNumber:      " << m_evtNumber << std::endl;
 	std::cout << "\tdataId:         " << m_dataId << std::endl;
 	std::cout << "\tevtBufSize:     " << bytes << std::endl;
 	std::cout << "\tmaxBufBytes:    " << m_maxBufBytes << std::endl;
 	std::cout << "\tevtBufCapacity: " << m_evtBufSize << std::endl;
 	std::cout << "\ttotalBytes:     " << m_totalBytes << std::endl;
     }
+
+    m_evtNumber++;
 
     return EXIT_SUCCESS;
 }

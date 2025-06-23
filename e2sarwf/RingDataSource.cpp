@@ -26,22 +26,13 @@
 
 using namespace ufmt;
 
-RingDataSource::RingDataSource(RingItemFactoryBase* pFact, CRingBuffer& ring) :
-    DataSource(pFact), m_ring(ring)
+RingDataSource::RingDataSource(RingItemFactoryBase* pFact, CRingBuffer& ring,
+			       unsigned long timeout) :
+    DataSource(pFact), m_ring(ring), m_timeout(timeout)
 {}
 
-/**
- * @details
- * Delegate to the `getItem()` call with a practically infinite timeout.
- */
 CRingItem*
 RingDataSource::getItem()
 {
-    return getItem(ULONG_MAX);
-}
-
-CRingItem*
-RingDataSource::getItem(unsigned long timeout)
-{
-    return m_pFactory->getRingItem(m_ring, timeout);
+    return m_pFactory->getRingItem(m_ring, m_timeout);
 }

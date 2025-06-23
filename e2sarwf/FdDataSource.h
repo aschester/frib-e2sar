@@ -47,6 +47,7 @@ public:
     FdDataSource(ufmt::RingItemFactoryBase* pFactory, int fd);
     /** @brief Destructor */
     virtual ~FdDataSource();
+    
     /** 
      * @brief Get a ring item from the soruce. Implementation of the mandatory 
      * interface from the base class

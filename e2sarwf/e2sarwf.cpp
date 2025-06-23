@@ -164,7 +164,9 @@ main(int argc, char* argv[])
     opts("basepath", po::value<std::string>()->default_value(cwd),
 	 "base path for file data sink [r]");
     opts("basename", po::value<std::string>()->default_value("reas"),
-	 "base name for data sink [r]");    
+	 "base name for data sink [r]");
+    opts("timeout", po::value<unsigned long>()->default_value(ULONG_MAX),
+	 "timeout seconds to read data from ringbuffer source [s]");  
     opts("verbose", po::value<bool>()->default_value(true),
 	 "enable verbose output [s,r]");    
     opts("debug", po::bool_switch()->default_value(false),
