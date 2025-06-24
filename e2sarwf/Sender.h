@@ -13,10 +13,10 @@
              Michigan State University
              East Lansing, MI 48824-1321
 
-     Author note: This code is heavily based on e2sar_perf.cpp provided as 
-                  an example by the E2SAR collaboration. The source code and 
-		  lisence for the E2SAR collaboration software can be found 
-		  at: https://github.com/JeffersonLab/E2SAR
+     Author note: This code draws heavily from e2sar_perf.cpp which was 
+                  written by the E2SAR collaboration. The source code and 
+                  license for the E2SAR collaboration software can be 
+                  found at: https://github.com/JeffersonLab/E2SAR
 		  --ASC 5/1/25
 */
 

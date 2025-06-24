@@ -291,10 +291,11 @@ Sender::operator()()
     // Send loop
     //
 
-    bool done = false;
     m_totalBytes = 0;
+    
+    bool done = false;
     std::unique_ptr<CRingItem> pItem;        // The current item
-    std::unique_ptr<CRingItem> pItemPending; // Pending due to buffer cap
+    std::unique_ptr<CRingItem> pPendingItem; // Pending due to buffer cap
 
     auto start = ch::high_resolution_clock::now();
 
@@ -311,10 +312,10 @@ Sender::operator()()
 	size_t currentBytes = 0; // Bytes in send buffer
 	
 	while (currentBytes < m_evtBufSize) {
-	    if (pItemPending) {
-		pItem = std::move(pItemPending);
+	    if (pPendingItem) {
+		pItem = std::move(pPendingItem);
 	    } else {
-		pItem = std::unique_ptr<CRingItem>(m_pSource->getItem());
+		pItem = std::make_unique<CRingItem>(m_pSource->getItem());
 		if (!pItem.get()) {
 		    if (m_totalBytes) {
 			done = true;
@@ -324,7 +325,7 @@ Sender::operator()()
 	    }
 	    uint32_t size = pItem->size();
 	    if (currentBytes + size > m_evtBufSize) { // Buffer full, send it
-		pItemPending = std::move(pItem);
+		pPendingItem = std::move(pItem);
 		break;
 	    }
 	    memcpy(p, pItem->getItemPointer(), size);
