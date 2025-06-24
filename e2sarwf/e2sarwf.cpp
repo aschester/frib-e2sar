@@ -44,8 +44,6 @@ using namespace e2sar;
 
 /** @todo (ASC 4/25/25): Alternative to signal-handling to avoid C-style 
  * linkage and singletons. */
-/** @todo (ASC 6/6/25): Struct to store variables map options to decouple 
- * Sender and Receiver from boost. */
 
 /**
  * @brief Check if two cmdline options confict

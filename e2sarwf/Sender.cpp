@@ -306,7 +306,13 @@ Sender::operator()()
 	    evtBuf = static_cast<u_int8_t*>(pEvtBufPool->malloc());
 	}
 	
-	// Pack ring items into the event buffer
+	// Pack ring items into the event buffer. Ring items are added to the
+	// event buffer until it is full. Full buffers are then added to the
+	// Segmenter send queue and free'd back to the pool. Items which do
+	// not fit in the current ringbuffer are added on the next iteration.
+	// The send loop will terminate when no more data is coming from the
+	// source after we have seen some data. In the case of a file this is
+	// due to EOF; a read timeout is implemented in for ringbuffer sources.
 
 	u_int8_t* p = evtBuf;    // Pointer to first byte
 	size_t currentBytes = 0; // Bytes in send buffer
@@ -315,7 +321,7 @@ Sender::operator()()
 	    if (pPendingItem) {
 		pItem = std::move(pPendingItem);
 	    } else {
-		pItem = std::make_unique<CRingItem>(m_pSource->getItem());
+		pItem = std::unique_ptr<CRingItem>(m_pSource->getItem());
 		if (!pItem.get()) {
 		    if (m_totalBytes) {
 			done = true;
@@ -324,13 +330,13 @@ Sender::operator()()
 		}
 	    }
 	    uint32_t size = pItem->size();
-	    if (currentBytes + size > m_evtBufSize) { // Buffer full, send it
+	    if (currentBytes + size > m_evtBufSize) {
 		pPendingItem = std::move(pItem);
 		break;
 	    }
 	    memcpy(p, pItem->getItemPointer(), size);
 	    currentBytes += size;
-	    p += size; // Prepare to copy next item
+	    p += size;
 	} // End buffer packing
 
 	sendBuffer(evtBuf, currentBytes);
@@ -491,6 +497,8 @@ Sender::sendBuffer(u_int8_t* pData, size_t bytes)
     }
     
     u_int16_t entropy = 0;
+
+    auto timestamp = getFirstTimestamp(pData, bytes);
     
     auto rvseg = m_pSegmenter->addToSendQueue(pData, bytes, m_evtNumber,
 					      m_dataId, entropy,
@@ -532,4 +540,12 @@ Sender::freeBuffer(boost::any a)
 {
     auto p = boost::any_cast<u_int8_t*>(a);
     m_pEvtBufQueue->push(p);
+}
+
+uint64_t
+Sender::getFirstTimestamp(u_int8_t* pData, size_t bytes)
+{
+    uint64_t timestamp = 0;
+    
+    return timestamp;
 }

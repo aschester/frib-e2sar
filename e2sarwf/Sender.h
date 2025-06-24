@@ -159,6 +159,13 @@ private:
      * @param a Buffer to return to the queue
      */
     void freeBuffer(boost::any a);
+    /**
+     * @brief Get the first PHYSICS_EVENT timestamp from a data buffer
+     * @param pData Pointer to the buffer containing your ring items
+     * @param bytes Size of data buffer in bytes
+     * @return The timestamp of the first PHYSICS_EVENT item
+     */
+    uint64_t getFirstTimestamp(u_int8_t* pData, size_t bytes);
 };
 
 #endif
