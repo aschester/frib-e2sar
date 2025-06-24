@@ -34,10 +34,10 @@ set(wf_libs
 
 set(wf_exec e2sarwf)
 set(wf_src
-  e2sarwf.cpp Sender.cpp Receiver.cpp FribE2sarUtils.cpp DataSource.cpp RingDataSource.cpp FdDataSource.cpp StreamDataSource.cpp DataSink.cpp FileDataSink.cpp RingDataSink.cpp
+  e2sarwf.cpp Sender.cpp Receiver.cpp FribE2sarUtils.cpp BufferPool.cpp DataSource.cpp RingDataSource.cpp FdDataSource.cpp StreamDataSource.cpp DataSink.cpp FileDataSink.cpp RingDataSink.cpp
   )
 set(wf_headers
-  Sender.h Receiver.h FribE2sarUtils.h DataSource.h FdDataSource.h RingDataSource.h StreamDataSource.h DataSink.h FileDataSink.h RingDataSink.h
+  Sender.h Receiver.h FribE2sarUtils.h BufferPool.h DataSource.h FdDataSource.h RingDataSource.h StreamDataSource.h DataSink.h FileDataSink.h RingDataSink.h
   )
 add_executable(${wf_exec} ${wf_src})
 target_include_directories(${wf_exec} PRIVATE ${wf_includes})

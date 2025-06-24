@@ -112,8 +112,6 @@ main(int argc, char* argv[])
 	 "specify EJFAT_URI on the command-line instead of the envvar");
     opts("num,n", po::value<size_t>()->default_value(0),
 	 "number of event buffers to send (0 send all data) [s]");
-    opts("enum,e", po::value<EventNum_t>()->default_value(0),
-	 "starting event number [s]");
     opts("srcid", po::value<u_int32_t>()->default_value(0),
 	 "event source ID [s]");
     opts("dataid", po::value<u_int16_t>()->default_value(0),
@@ -164,7 +162,9 @@ main(int argc, char* argv[])
     opts("basename", po::value<std::string>()->default_value("reas"),
 	 "base name for data sink [r]");
     opts("timeout", po::value<unsigned long>()->default_value(ULONG_MAX),
-	 "timeout seconds to read data from ringbuffer source [s]");  
+	 "timeout seconds to read data from ringbuffer source [s]");
+    opts("usect", po::bool_switch()->default_value(false),
+	 "use event counter as event number (else first timestamp) [s]");
     opts("verbose", po::value<bool>()->default_value(true),
 	 "enable verbose output [s,r]");    
     opts("debug", po::bool_switch()->default_value(false),

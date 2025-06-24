@@ -60,6 +60,7 @@
 // Project headers:
 
 #include "FribE2sarUtils.h"
+#include "BufferPool.h"
 #include "DataSource.h"
 #include "RingDataSource.h"
 #include "FdDataSource.h"
@@ -90,6 +91,7 @@ Sender::Sender(po::variables_map& vm) :
     m_totalBytes(0),
     m_sendCount(0),
     m_threadsRunning(false),
+    m_useCt(vm["usect"].as<bool>()),
     m_debug(vm["debug"].as<bool>()),
     m_verbose(vm["verbose"].as<bool>())
 {
@@ -201,10 +203,9 @@ Sender::Sender(po::variables_map& vm) :
     auto srcId = vm["srcid"].as<u_int32_t>();
     auto queueSize = vm["queue-size"].as<size_t>();
     
-    m_pSegmenter
-	= std::make_unique<Segmenter>(ejfatUri, m_dataId, srcId, flags);
-    m_pEvtBufQueue
-	= std::make_unique<boost::lockfree::queue<u_int8_t*>>(queueSize);
+    m_pSegmenter = std::make_unique<Segmenter>(ejfatUri, m_dataId,
+					       srcId, flags);
+    m_pPool = std::make_unique<BufferPool>(queueSize, m_evtBufSize);
 
     if (m_verbose) {
 	std::cout << "----- Sender configuration -----" << std::endl;
@@ -224,6 +225,9 @@ Sender::Sender(po::variables_map& vm) :
 		  << concatWithSeparator(Optimizations::selectedAsStrings())
 		  << std::endl;
 	std::cout << "NSCLDAQ format version:        " << daqVersion
+		  << std::endl;
+	std::cout << "Event number is: "
+		  << (m_useCt ? "event count" : "first timestamp")
 		  << std::endl;
 	std::cout << "--------------------------------" << std::endl;
     }
@@ -283,17 +287,12 @@ Sender::operator()()
     ch::seconds duration(1);
     boost::this_thread::sleep_for(duration);
 
-    // Create our buffer pool and get the initial data buffer:
-	
-    auto pEvtBufPool = std::make_unique<boost::pool<>>(m_evtBufSize);
-    u_int8_t* evtBuf{nullptr}; // Buffer from pool - fill and send
-
     /////////////////////////////////////////////////////////////////////////
     // Send loop
     //
 
-    m_totalBytes = 0;
-    m_sendCount = 0;
+    m_totalBytes = 0; // _Probably_ already initialized but it can't hurt...
+    m_sendCount = 0;  // Ditto
     
     bool done = false;
     std::unique_ptr<CRingItem> pItem;        // The current item
@@ -303,10 +302,6 @@ Sender::operator()()
 
     while (!done) {
 	auto now = ch::high_resolution_clock::now();
-
-	if (!m_pEvtBufQueue->pop(evtBuf)) {
-	    evtBuf = static_cast<u_int8_t*>(pEvtBufPool->malloc());
-	}
 	
 	// Pack ring items into the event buffer. Ring items are added to the
 	// event buffer until it is full. Full buffers are then added to the
@@ -316,6 +311,7 @@ Sender::operator()()
 	// source after we have seen some data. In the case of a file this is
 	// due to EOF; a read timeout is implemented in for ringbuffer sources.
 
+	u_int8_t* evtBuf = static_cast<u_int8_t*>(m_pPool->pop());
 	u_int8_t* p = evtBuf;    // Pointer to first byte
 	size_t currentBytes = 0; // Bytes in send buffer
 	
@@ -349,13 +345,6 @@ Sender::operator()()
 	    done = true;
 	}
 
-	// Free the backlog of unused buffers:
-	
-	u_int8_t* item{nullptr};
-	while (m_pEvtBufQueue->pop(item)) {
-	    pEvtBufPool->free(item);
-	}
-	
 	// Wait to send next event:
 
 	auto until = now + ch::microseconds(interEventSleepUsec);
@@ -396,10 +385,6 @@ Sender::operator()()
 	      << ch::duration<double>(dt)
 	      << std::endl;
     
-    // Cleaup pool:
-    
-    pEvtBufPool->purge_memory();
-	  
     return EXIT_SUCCESS;
 }
 
@@ -498,12 +483,15 @@ Sender::sendBuffer(u_int8_t* pData, size_t bytes)
 	return EXIT_SUCCESS;
     }
     
-    u_int16_t entropy = 0;
-
-    auto timestamp = getFirstTimestamp(pData, bytes);
-    
-    auto rvseg = m_pSegmenter->addToSendQueue(pData, bytes, timestamp,
-					      m_dataId, entropy,
+    // Event number is either timestamp or event counter:
+    EventNum_t evtNum;
+    if (m_useCt) {
+	evtNum = m_sendCount;
+    } else {
+	evtNum = getFirstTimestamp(pData, bytes);
+    }
+    auto rvseg = m_pSegmenter->addToSendQueue(pData, bytes, evtNum,
+					      m_dataId, /*entropy=*/0,
 					      &senderCallback, pData);
     if (rvseg.has_error()) {
 	std::cerr << "Failed to add to send queue: "
@@ -518,8 +506,8 @@ Sender::sendBuffer(u_int8_t* pData, size_t bytes)
 	
     if (m_debug) {
 	// dumpBuffer(pData, bytes);
-	std::cout << "Sent event:" << std::endl;
-	std::cout << "\tevtNumber:      " << timestamp << std::endl;
+	std::cout << "Sent event: " << m_sendCount << std::endl;
+	std::cout << "\tevtNumber:      " << evtNum << std::endl;
 	std::cout << "\tdataId:         " << m_dataId << std::endl;
 	std::cout << "\tevtBufSize:     " << bytes << std::endl;
 	std::cout << "\tevtBufCapacity: " << m_evtBufSize << std::endl;
@@ -534,14 +522,14 @@ Sender::sendBuffer(u_int8_t* pData, size_t bytes)
 void
 Sender::senderCallback(boost::any a) 
 {
-    m_pInstance->freeBuffer(a);
+    m_pInstance->releaseToPool(a);
 }
 
 void
-Sender::freeBuffer(boost::any a) 
+Sender::releaseToPool(boost::any a) 
 {
     auto p = boost::any_cast<u_int8_t*>(a);
-    m_pEvtBufQueue->push(p);
+    m_pPool->push(static_cast<void*>(p));
 }
 
 uint64_t

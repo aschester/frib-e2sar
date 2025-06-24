@@ -45,6 +45,7 @@ class DataSource;
 namespace ufmt {
     class RingItemFactoryBase;
 }
+class BufferPool;
 
 /**
  * @class Sender
@@ -69,6 +70,7 @@ private:
     size_t m_totalBytes;     //!< Total bytes sent
     size_t m_sendCount;      //!< Number of sent event buffers
     bool m_threadsRunning;   //!< True when send loop is active
+    bool m_useCt;            //!< Use send count as event number
     bool m_debug;            //!< Output debugging information
     bool m_verbose;          //!< Enable verbose output of configuration, etc.
     std::vector<std::string> m_senders; //!< List of sender IP addresses
@@ -77,7 +79,7 @@ private:
     std::unique_ptr<e2sar::LBManager> m_pLBManager; //!< E2SAR Load Balancer
     std::unique_ptr<DataSource> m_pSource; //!< Source of data to send
     /** Buffer queue to recycle send buffers */
-    std::unique_ptr<boost::lockfree::queue<u_int8_t*>> m_pEvtBufQueue;
+    std::unique_ptr<BufferPool> m_pPool; //!< Managed pool for event buffers
 
     static Sender* m_pInstance; //!< Instance for handling signals
     
@@ -137,7 +139,7 @@ private:
     DataSource* makeDataSource(ufmt::RingItemFactoryBase* pFactory,
 			       const std::string& strUrl);
     /**
-     * @brief Send data using the E2SAR Segmenter.
+     * @brief Send data using the E2SAR Segmenter
      * @param pData Data buffer to send
      * @param bytes Size of data buffer in bytes
      * @return int
@@ -158,7 +160,7 @@ private:
      * @brief Callback function to return a buffer to the pool
      * @param a Buffer to return to the queue
      */
-    void freeBuffer(boost::any a);
+    void releaseToPool(boost::any a);
     /**
      * @brief Get the first timestamp from a data buffer
      * @param pData Pointer to the buffer containing your ring items
