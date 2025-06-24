@@ -83,11 +83,12 @@ Sender* Sender::m_pInstance = nullptr;
  */
 Sender::Sender(po::variables_map& vm) :
     m_rateGbps(vm["rate"].as<float>()),
-    m_evtNumber(0),
     m_timeout(vm["timeout"].as<unsigned long>()),
     m_dataId(vm["dataid"].as<u_int16_t>()),
     m_nEvents(vm["num"].as<size_t>()),
     m_evtBufSize(vm["bufsize"].as<size_t>()),
+    m_totalBytes(0),
+    m_sendCount(0),
     m_threadsRunning(false),
     m_debug(vm["debug"].as<bool>()),
     m_verbose(vm["verbose"].as<bool>())
@@ -292,6 +293,7 @@ Sender::operator()()
     //
 
     m_totalBytes = 0;
+    m_sendCount = 0;
     
     bool done = false;
     std::unique_ptr<CRingItem> pItem;        // The current item
@@ -343,7 +345,7 @@ Sender::operator()()
 
 	// Check if we've hit a send limit:
 
-	if (m_nEvents != 0 && m_evtNumber == m_nEvents) {
+	if (m_nEvents != 0 && m_sendCount == m_nEvents) {
 	    done = true;
 	}
 
@@ -500,7 +502,7 @@ Sender::sendBuffer(u_int8_t* pData, size_t bytes)
 
     auto timestamp = getFirstTimestamp(pData, bytes);
     
-    auto rvseg = m_pSegmenter->addToSendQueue(pData, bytes, m_evtNumber,
+    auto rvseg = m_pSegmenter->addToSendQueue(pData, bytes, timestamp,
 					      m_dataId, entropy,
 					      &senderCallback, pData);
     if (rvseg.has_error()) {
@@ -517,15 +519,15 @@ Sender::sendBuffer(u_int8_t* pData, size_t bytes)
     if (m_debug) {
 	// dumpBuffer(pData, bytes);
 	std::cout << "Sent event:" << std::endl;
-	std::cout << "\tevtNumber:      " << m_evtNumber << std::endl;
+	std::cout << "\tevtNumber:      " << timestamp << std::endl;
 	std::cout << "\tdataId:         " << m_dataId << std::endl;
 	std::cout << "\tevtBufSize:     " << bytes << std::endl;
 	std::cout << "\tevtBufCapacity: " << m_evtBufSize << std::endl;
 	std::cout << "\ttotalBytes:     " << m_totalBytes << std::endl;
     }
 
-    m_evtNumber++;
-
+    m_sendCount++;
+    
     return EXIT_SUCCESS;
 }
 
@@ -545,7 +547,24 @@ Sender::freeBuffer(boost::any a)
 uint64_t
 Sender::getFirstTimestamp(u_int8_t* pData, size_t bytes)
 {
-    uint64_t timestamp = 0;
+    auto p = pData;    
+    size_t readBytes = 0;
     
-    return timestamp;
+    while (readBytes < bytes) {
+	auto pHdr = reinterpret_cast<RingItemHeader*>(p);
+	if (pHdr->s_type == PHYSICS_EVENT) {
+	    p += sizeof(RingItemHeader);
+	    if (*p != sizeof(BodyHeader)) {
+		std::cerr << "PHYSICS_EVENT without body header!" << std::endl;
+		return 0;
+	    }
+	    auto pBodyHdr = reinterpret_cast<BodyHeader*>(p);
+	    return pBodyHdr->s_timestamp;
+	} else {
+	    readBytes += pHdr->s_size;
+	    p += pHdr->s_size;
+	}
+    }
+    
+    return 0;
 }
