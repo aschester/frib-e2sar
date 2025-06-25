@@ -39,3 +39,4 @@ StreamDataSource::getItem()
 {
     return m_pFactory->getRingItem(m_str);
 }
+

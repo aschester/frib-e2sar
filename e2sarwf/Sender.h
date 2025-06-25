@@ -13,10 +13,10 @@
              Michigan State University
              East Lansing, MI 48824-1321
 
-     Author note: This code is heavily based on e2sar_perf.cpp provided as 
-                  an example by the E2SAR collaboration. The source code and 
-		  lisence for the E2SAR collaboration software can be found 
-		  at: https://github.com/JeffersonLab/E2SAR
+     Author note: This code draws heavily from e2sar_perf.cpp which was 
+                  written by the E2SAR collaboration. The source code and 
+                  license for the E2SAR collaboration software can be 
+                  found at: https://github.com/JeffersonLab/E2SAR
 		  --ASC 5/1/25
 */
 
@@ -45,6 +45,7 @@ class DataSource;
 namespace ufmt {
     class RingItemFactoryBase;
 }
+class BufferPool;
 
 /**
  * @class Sender
@@ -61,22 +62,23 @@ namespace ufmt {
 class Sender
 {    
 private:
-    float m_rateGbps;      //!< Send rate in Gbps
-    u_int16_t m_dataId;    //!< Data Id
-    size_t m_nEvents;      //!< Number of events to send (0 until eof or SIGINT)
-    size_t m_evtBufSize;   //!< Send buffer size in bytes
-    size_t m_maxBufBytes;  //!< Max bytes to fill before sending
-    size_t m_totalBytes;   //!< Total bytes sent
-    bool m_threadsRunning; //!< True when send loop is active
-    bool m_debug;          //!< Output debugging information
-    bool m_verbose;        //!< Enable verbose output of configuration, etc.
+    float m_rateGbps;        //!< Send rate in Gbps
+    unsigned long m_timeout; //!< Timeout seconds for reading data from src
+    u_int16_t m_dataId;      //!< Data Id
+    size_t m_nEvents;        //!< Number of events to send (0: all)
+    size_t m_evtBufSize;     //!< Send buffer size in bytes
+    size_t m_totalBytes;     //!< Total bytes sent
+    size_t m_sendCount;      //!< Number of sent event buffers
+    bool m_threadsRunning;   //!< True when send loop is active
+    bool m_useCt;            //!< Use event count as event number
+    bool m_debug;            //!< Output debugging information
+    bool m_verbose;          //!< Enable verbose output of configuration, etc.
     std::vector<std::string> m_senders; //!< List of sender IP addresses
     
     std::unique_ptr<e2sar::Segmenter> m_pSegmenter; //!< E2SAR Segmenter
     std::unique_ptr<e2sar::LBManager> m_pLBManager; //!< E2SAR Load Balancer
     std::unique_ptr<DataSource> m_pSource; //!< Source of data to send
-    /** Buffer queue to recycle send buffers */
-    std::unique_ptr<boost::lockfree::queue<u_int8_t*>> m_pEvtBufQueue;
+    std::unique_ptr<BufferPool> m_pPool; //!< Managed pool for event buffers
 
     static Sender* m_pInstance; //!< Instance for handling signals
     
@@ -136,15 +138,14 @@ private:
     DataSource* makeDataSource(ufmt::RingItemFactoryBase* pFactory,
 			       const std::string& strUrl);
     /**
-     * @brief Send data using the E2SAR Segmenter.
+     * @brief Send data using the E2SAR Segmenter
      * @param pData Data buffer to send
      * @param bytes Size of data buffer in bytes
-     * @param evtNum Event number
      * @return int
      * @retval EXIT_SUCCESS Success
      * @retval EXIT_FAILURE Failure, hopefully with error message on stderr
      */
-    int sendBuffer(u_int8_t* pData, size_t bytes, e2sar::EventNum_t evtNum);
+    int sendBuffer(u_int8_t* pData, size_t bytes);
     /** 
      * @brief Static callback function for Segmenter non-blocking send using 
      * `addToSendQueue()`
@@ -158,7 +159,15 @@ private:
      * @brief Callback function to return a buffer to the pool
      * @param a Buffer to return to the queue
      */
-    void freeBuffer(boost::any a);
+    void releaseToPool(boost::any a);
+    /**
+     * @brief Get the first timestamp from a data buffer
+     * @param pData Pointer to the buffer containing your ring items
+     * @param bytes Size of data buffer in bytes
+     * @return The timestamp of the first physics item
+     * @retval 0 If the event has no body header or no physics items in buffer
+     */
+    uint64_t getFirstTimestamp(u_int8_t* pData, size_t bytes);
 };
 
 #endif

@@ -25,6 +25,8 @@
 
 #include "DataSource.h"
 
+#include <climits>
+
 class CRingBuffer;
 
 /**
@@ -35,14 +37,18 @@ class CRingBuffer;
 class RingDataSource : public DataSource
 {
 private:
-    CRingBuffer& m_ring; //!< References the ringbuffer we get data from
+    CRingBuffer&  m_ring;    //!< References the ringbuffer we get data from
+    unsigned long m_timeout; // Timeout seconds for reads from ringbuffer
+    
 public:
     /**
      * @brief Constructor
-     * @param pFact Factory we use to get items.
-     * @param ring  References the ring buffer from which rings come.
+     * @param pFact   Factory we use to get items.
+     * @param ring    References the ring buffer from which items come
+     * @param timeout Timeout seconds for reading from ringbuffer
      */
-    RingDataSource(ufmt::RingItemFactoryBase* pFact, CRingBuffer& ring);
+    RingDataSource(ufmt::RingItemFactoryBase* pFact, CRingBuffer& ring,
+		   unsigned long timeout=ULONG_MAX);
     /** @brief Destructor */
     virtual ~RingDataSource() {};
     
@@ -51,6 +57,17 @@ public:
      * @return Pointer to next ring item - cannot be nullptr!
      */
     virtual ufmt::CRingItem* getItem();
+
+    /**
+     * @brief Set the timeout value
+     * @param timeout Seconds to wait for data
+     */
+    void setTimeout(unsigned long timeout) { m_timeout = timeout; };
+    /**
+     * @brief Get the timeout value
+     * @return Timeout seconds
+     */
+    unsigned long getTimeout() { return m_timeout; };
 };
 
 #endif

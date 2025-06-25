@@ -21,7 +21,7 @@
  * @brief Validate timestamp ordering for E2SAR pipeline processing. 
  * This is the ufmt evtdump modified to validate that event timestamps 
  * are monotonically increasing.
- * @note (ASC 5/22/25): Issue with CRangError exception when attempting to
+ * @note (ASC 5/22/25): Issue with CRangeError exception when attempting to
  * attach to ringbuffer when rate is high ( > 5 Gbps or so).
  */
 

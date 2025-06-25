@@ -44,8 +44,6 @@ using namespace e2sar;
 
 /** @todo (ASC 4/25/25): Alternative to signal-handling to avoid C-style 
  * linkage and singletons. */
-/** @todo (ASC 6/6/25): Struct to store variables map options to decouple 
- * Sender and Receiver from boost. */
 
 /**
  * @brief Check if two cmdline options confict
@@ -114,8 +112,6 @@ main(int argc, char* argv[])
 	 "specify EJFAT_URI on the command-line instead of the envvar");
     opts("num,n", po::value<size_t>()->default_value(0),
 	 "number of event buffers to send (0 send all data) [s]");
-    opts("enum,e", po::value<EventNum_t>()->default_value(0),
-	 "starting event number [s]");
     opts("srcid", po::value<u_int32_t>()->default_value(0),
 	 "event source ID [s]");
     opts("dataid", po::value<u_int16_t>()->default_value(0),
@@ -145,7 +141,7 @@ main(int argc, char* argv[])
 	 "number of receiver threads is equal to the number of cores [s,r]");
     opts("optimize,o", po::value<std::vector<std::string>>()->multitoken(),
 	 "a list of optimizations to turn on [s]");
-    opts("mtu,m", po::value<u_int16_t>()->default_value(9000),
+    opts("mtu,m", po::value<u_int16_t>(),
 	 "MTU size in bytes) [s]");
 
     // Additions to base options:
@@ -164,7 +160,11 @@ main(int argc, char* argv[])
     opts("basepath", po::value<std::string>()->default_value(cwd),
 	 "base path for file data sink [r]");
     opts("basename", po::value<std::string>()->default_value("reas"),
-	 "base name for data sink [r]");    
+	 "base name for data sink [r]");
+    opts("timeout", po::value<unsigned long>()->default_value(ULONG_MAX),
+	 "timeout seconds to read data from ringbuffer source [s]");
+    opts("usect", po::bool_switch()->default_value(false),
+	 "use event counter as event number (else first timestamp) [s]");
     opts("verbose", po::value<bool>()->default_value(true),
 	 "enable verbose output [s,r]");    
     opts("debug", po::bool_switch()->default_value(false),

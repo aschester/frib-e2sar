@@ -38,6 +38,7 @@ class StreamDataSource : public DataSource
 {
 private:
     std::istream& m_str; //!< Stream name to read ring items from.
+
 public:
     /** 
      * @brief Constructor
@@ -47,9 +48,9 @@ public:
     StreamDataSource(ufmt::RingItemFactoryBase* pFactory, std::istream& str);
     /** @brief Destructor */
     virtual ~StreamDataSource();
+    
     /** 
-     * @brief Get a ring item from the soruce. Implementation of the mandatory 
-     * interface from the base class.
+     * @brief Get the next item from the stream
      * @return Pointer to the next ring item from the stream
      * @retval nullptr If none
      */
