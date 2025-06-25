@@ -70,7 +70,7 @@ private:
     size_t m_totalBytes;     //!< Total bytes sent
     size_t m_sendCount;      //!< Number of sent event buffers
     bool m_threadsRunning;   //!< True when send loop is active
-    bool m_useCt;            //!< Use send count as event number
+    bool m_useCt;            //!< Use event count as event number
     bool m_debug;            //!< Output debugging information
     bool m_verbose;          //!< Enable verbose output of configuration, etc.
     std::vector<std::string> m_senders; //!< List of sender IP addresses
@@ -78,7 +78,6 @@ private:
     std::unique_ptr<e2sar::Segmenter> m_pSegmenter; //!< E2SAR Segmenter
     std::unique_ptr<e2sar::LBManager> m_pLBManager; //!< E2SAR Load Balancer
     std::unique_ptr<DataSource> m_pSource; //!< Source of data to send
-    /** Buffer queue to recycle send buffers */
     std::unique_ptr<BufferPool> m_pPool; //!< Managed pool for event buffers
 
     static Sender* m_pInstance; //!< Instance for handling signals

@@ -48,7 +48,7 @@ class BufferPool
 private:
     std::unique_ptr<boost::lockfree::queue<void*, boost::lockfree::fixed_sized<true>>> m_pQueue; //!< Queue for storing recycled buffers
     std::unique_ptr<boost::pool<>> m_pPool; //!< Manages storage for the class
-    std::mutex m_mutex; //!< Mutex for locking the pool
+    std::mutex m_mutex; //!< Mutex for locking pool
     
 public:
     /**

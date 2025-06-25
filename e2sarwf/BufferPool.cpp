@@ -24,9 +24,11 @@
 #include <iostream>
 
 #include <boost/lockfree/queue.hpp>
-#include <boost/pool/pool.hpp>
+#include <boost/pool/singleton_pool.hpp>
 #include <boost/thread.hpp>
 #include <boost/chrono.hpp>
+
+static const int RETRY_ATTEMPTS = 5; //!< Number of `push()` retries
 
 using namespace boost::lockfree;
 
@@ -37,7 +39,7 @@ BufferPool::BufferPool(size_t queueSize, size_t bufferSize) :
 
 BufferPool::~BufferPool()
 {
-    free();
+    std::lock_guard<std::mutex> lock(m_mutex);
     m_pPool->purge_memory();
 }
 
@@ -52,7 +54,6 @@ BufferPool::pop()
 {
     void* buffer;
     if (!m_pQueue->pop(buffer)) {
-	// Pool isn't threadsafe, so lock while we do the malloc:
 	std::lock_guard<std::mutex> lock(m_mutex);
 	buffer = m_pPool->malloc();
 	if (!buffer) {
@@ -70,11 +71,12 @@ BufferPool::pop()
  */
 void
 BufferPool::push(void* pData) {
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < RETRY_ATTEMPTS; i++) {
 	if (m_pQueue->push(pData)) {
 	    return;
 	}
     }
+    std::lock_guard<std::mutex> lock(m_mutex);
     std::cerr << "Failed to push buffer to queue" << std::endl;
     m_pPool->free(pData);
 }
@@ -84,6 +86,7 @@ BufferPool::free()
 {
     void* buffer;
     while(m_pQueue->pop(buffer)) {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	m_pPool->free(buffer);
     }
 }
