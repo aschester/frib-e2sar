@@ -76,17 +76,22 @@ BufferPool::push(void* pData) {
 	    return;
 	}
     }
+    std::cerr << "Failed to push buffer to queue, freeing instead..."
+	      << std::endl;
     std::lock_guard<std::mutex> lock(m_mutex);
-    std::cerr << "Failed to push buffer to queue" << std::endl;
     m_pPool->free(pData);
 }
+
+/****************************************************************************
+ * Private functions                                                        *
+ ***************************************************************************/
 
 void
 BufferPool::free()
 {
+    std::lock_guard<std::mutex> lock(m_mutex);
     void* buffer;
     while(m_pQueue->pop(buffer)) {
-	std::lock_guard<std::mutex> lock(m_mutex);
 	m_pPool->free(buffer);
     }
 }

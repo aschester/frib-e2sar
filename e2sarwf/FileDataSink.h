@@ -46,14 +46,14 @@ public:
      * @param fd a file descriptor to define the sink
      * @throw std::string If fd is writable
      */
-    FileDataSink (int fd);
+    FileDataSink(int fd);
     /**
      * @brief Construct from a file name
      * @param fname A file descriptor to define the sink
      * @throw CErrnoException On failure opening file
      * @throw std::string If file is not writable
      */
-    FileDataSink (std::string pathname);
+    FileDataSink(std::string pathname);
     /** @brief Destructor */
     virtual ~FileDataSink ();    
 

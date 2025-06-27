@@ -37,6 +37,13 @@
  * recycled buffers and uses a Boost pool to allocate fixed-sized blocks of 
  * memory. The size of the queue (max number of elements) and the size of each 
  * data block are determined on construction.
+ *
+ * The buffer pool is not threadsafe, so we use a lock guard to ensure 
+ * critical parts of the code are not run concurrently by multiple threads. 
+ * An alternative is to use Boost singleton pool, but that requires the buffer 
+ * size to be known at compile time. This approach gives us a little more 
+ * flexibility at the (possible) cost of some simplicity managing thread 
+ * safety with a singleton.
  */
 
 namespace boost {
@@ -71,6 +78,8 @@ public:
      * @param pData Pointer to data buffer
      */
     void push(void* pData);
+
+private:
     /** @brief Pop all data off the queue and free associated memory */
     void free();
 };

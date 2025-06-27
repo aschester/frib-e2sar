@@ -31,13 +31,9 @@
 #include <filesystem>
 #include <iostream>
 
-// E2SAR includes and deps:
-
 #include <e2sar.hpp>
 
-// Unified format library:
-
-#include <DataFormat.h>
+#include <DataFormat.h> // From UFMT
 #include <RingItemFactoryBase.h>
 #include <CRingItem.h>
 #include <CAbnormalEndItem.h>
@@ -51,13 +47,9 @@
 #include <CRingStateChangeItem.h>
 #include <CUnknownFragment.h>
 
-// Other NSCLDAQ includes:
-
-#include <URL.h>
+#include <URL.h>        // From NSCLDAQ
 #include <CRemoteAccess.h>
 #include <CRingBuffer.h>
-
-// Project headers:
 
 #include "FribE2sarUtils.h"
 #include "BufferPool.h"
