@@ -37,14 +37,16 @@
 #include "RingDataSink.h"
 
 using namespace ufmt;
+namespace ch = boost::chrono;
 
 /**
  * @details
  * Create the sink from the passed URI. It is up to the caller to ensure that 
  * the URI string is well formed.
  */
-BufferedSink::BufferedSink(std::string uri, int timeout) :
+BufferedSink::BufferedSink(std::string uri, size_t timeout, size_t window) :
     m_timeout(timeout),
+    m_window(window*1e9),
     m_lastEmitted(0),
     m_evtList(),
     m_pSink(std::unique_ptr<DataSink>(makeDataSink(uri))),
@@ -100,7 +102,7 @@ BufferedSink::makeDataSink(std::string uri)
 void
 BufferedSink::insertBuffer(Buffer* pBuffer)
 {
-    std::lock_guard<std::mutex> lock(m_listMutex);
+    std::lock_guard<std::mutex> lock(m_mutex);
 
     if (pBuffer->s_time < m_lastEmitted) {
 	std::cerr << "**WARNING** Data late: current " << pBuffer->s_time
@@ -134,9 +136,16 @@ void
 BufferedSink::poll()
 {
     try {
+	auto start = ch::high_resolution_clock::now();
 	while (true) {
-	    boost::this_thread::sleep_for(boost::chrono::seconds(m_timeout));
-	    outputData();
+	    auto now = ch::high_resolution_clock::now();
+	    if (queueTimeDifference() > m_window) {
+		outputData();
+		start = now;
+	    } else if (now - start > ch::seconds(m_timeout)) {
+		outputData();
+		start = now;
+	    }
 	    boost::this_thread::interruption_point();
 	}
     }
@@ -150,11 +159,9 @@ BufferedSink::poll()
 void
 BufferedSink::outputData()
 {
-    std::lock_guard<std::mutex> lock(m_listMutex);
-
     m_lastEmitted = getLastTime();
-    
-    while (!m_evtList.empty()) {
+    while (!m_evtList.empty() && m_evtList.front()->s_time <= m_lastEmitted) {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	std::unique_ptr<Buffer> pBuffer(m_evtList.front());
 	m_evtList.pop_front();
 	write(pBuffer->s_pData, pBuffer->s_size);

@@ -187,8 +187,8 @@ Receiver::shutdown()
     }
 
     std::cout << "Stopping dequeue threads..." << std::endl;
-    std::mutex mutex;
-    std::lock_guard<std::mutex> lock(mutex);
+    std::mutex m;
+    std::lock_guard<std::mutex> lock(m);
     for (auto& t : m_deqThreads) {
 	t.interrupt();
     }

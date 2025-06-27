@@ -24,7 +24,7 @@
 
 #include <memory>
 #include <string>
-#include <list>
+#include <deque>
 #include <mutex>
 
 namespace boost {
@@ -58,16 +58,17 @@ struct Buffer
 class BufferedSink
 {
 private:
-    size_t m_timeout; //!< Timeout seconds for output
+    size_t m_timeout; //!< Timeout seconds for outputting data
+    uint64_t m_window; //!< Sliding window for outputting data
     uint64_t m_lastEmitted; //!< s_time value of last Buffer emitted
-    std::list<Buffer*> m_evtList; //!< List of events sorted by timestamp
+    std::deque<Buffer*> m_evtList; //!< List of events sorted by timestamp
     std::unique_ptr<DataSink> m_pSink; //!< Our data sink
     std::unique_ptr<boost::thread> m_pOutThread; //!< Thread for output
-    std::mutex m_listMutex; //!< Mutex for threadsafe list access
+    std::mutex m_mutex; //!< Mutex for locking container access
     
 public:
     /** @brief Construct from URI */
-    BufferedSink(std::string uri, int timeout=2);
+    BufferedSink(std::string uri, size_t timeout=2, size_t window=10);
     /** @brief Destructor */
     ~BufferedSink();
 
@@ -95,6 +96,7 @@ private:
     uint64_t getLastTime() {
 	return (m_evtList.empty() ? 0 : m_evtList.back()->s_time);
     };
+    uint64_t queueTimeDifference() { return getLastTime() - getFirstTime(); };
     /**
      * @brief Write data to a sink
      * @param pData Data buffer to write

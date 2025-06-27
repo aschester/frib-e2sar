@@ -39,7 +39,7 @@ BufferPool::BufferPool(size_t queueSize, size_t bufferSize) :
 
 BufferPool::~BufferPool()
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::lock_guard<std::mutex> lock(std::mutex);
     m_pPool->purge_memory();
 }
 
