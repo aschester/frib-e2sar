@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 ##
 # @file run_recv_pipe.py
 # @details Run receive-side pipe and eventlog for FRIB-E2SAR workflows
@@ -6,6 +7,12 @@
 
 ##
 # @todo (ASC 6/18/25): Specify cmdline arg data types.
+#
+
+##
+# @todo (ASC 7/8/25): Could be refactored into an application class with
+# interruptable, threaded subprocesses and a simple main a la
+# run_reassembler.py.
 #
 
 import argparse
@@ -17,11 +24,10 @@ import sys
 import time
 
 # NSCLDAQ needed to create evb sources:
-
 daqbin = os.getenv("DAQBIN")
 if daqbin is None:
-    print("DAQBIN is not defined! You must source an NSCLDAQ version to run "
-          "the receive pipeline.")
+    print("DAQBIN is not defined! You must source an NSCLDAQ version "
+          "to run the receive pipeline.")
     sys.exit(1)
 else:
     print(f"Using DAQBIN: {daqbin}")
@@ -54,10 +60,10 @@ def create_sink(sink_name):
         ringbuffers = ringbuffers[:-1]
         
     if sink_name in ringbuffers:
-        print(f"ringbuffer sink {sink_name} already exists on localhost")
+        print(f"Ringbuffer sink {sink_name} already exists on localhost")
         return
     else:
-        print(f"creating ringbuffer sink {sink_name}")  
+        print(f"Creating ringbuffer sink {sink_name}")  
         cmd = f"{daqbin}/ringbuffer create {sink_name}"
         proc = subprocess.run(shlex.split(cmd), capture_output=True,
                               text=True)
@@ -83,7 +89,8 @@ def create_sink(sink_name):
 # directory under your top-level frib-e2sar installation directory, refer to
 # that file for additional documentation.
 #
-def main():
+            
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog="run_recv_pipe.py",
         description="Run receive-side pipe and eventlog for FRIB-E2SAR "
@@ -105,12 +112,9 @@ def main():
     parser.add_argument("-w", "--window",
                         help="event orderer build window in seconds",
                         default=20)
-    parser.add_argument("--glom",
-                        help="build events yes/no = 1/0",
-                        default=1)
     parser.add_argument("--glomdt",
                         help="correlation window for building events in "
-                        "nanoseconds (ignored if '--glom 0')",
+                        "nanoseconds",
                         default=1000)
     parser.add_argument("--logdata", type=int,
                         help="log data from sink ringbuffer yes/no = 1/0",
@@ -136,9 +140,9 @@ def main():
     create_sink(args.sink) # Make sure the sink exists
     
     evbcmd = (f"{args.startup} -source {args.source} -sink {args.sink} "
-              f"-build {args.glom} -glomdt {args.glomdt} "
-              f"-window {args.window} -ddasraw {ddasraw}")
-    print(f"Running evtbuild command: {evbcmd}")
+              f"-glomdt {args.glomdt} -window {args.window} "
+              f"-ddasraw {ddasraw}")
+    print(f"[evbcmd] {evbcmd}")
     
     evbproc = subprocess.Popen(shlex.split(evbcmd), stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, text=True)
@@ -152,7 +156,7 @@ def main():
                   f"{evbproc.returncode}")
             print(f"evbproc process output:")
             for line in evbproc.stdout:
-                print(line)
+                print(line, end="")
             sys.exit(1)
         pollct += 1
         time.sleep(1)
@@ -165,7 +169,7 @@ def main():
         logcmd = (f"{daqbin}/eventlog -s tcp://localhost/{args.sink} "
                   f"-n {args.number_of_sources} -S {args.segment_size} "
                   f"--oneshot")
-        print(f"Running eventlog command: {logcmd}")
+        print(f"[logcmd] {logcmd}")
         print("Recording run...",end="")
         sys.stdout.flush()
         logproc = subprocess.run(shlex.split(logcmd), capture_output=True,
@@ -180,17 +184,13 @@ def main():
             evbproc.wait()
             sys.exit(1)
         else:
-            print("done")
+            print("Done")
             sys.stdout.flush()            
-            print(f"{logcmd} completed with returncode {logproc.returncode}")
+            print(f"{logcmd} Completed with returncode {logproc.returncode}")
             time.sleep(2)            
             evbproc.kill()
             evbproc.wait()
-            print(f"{evbcmd} completed with returncode {evbproc.returncode}")
+            print(f"{evbcmd} Completed with returncode {evbproc.returncode}")
     else:
         print("Not recording data...")
-        evbproc.wait()
-            
-if __name__ == "__main__":
-    main()
-    
+        evbproc.wait()    

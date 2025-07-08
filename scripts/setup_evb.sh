@@ -19,31 +19,27 @@
 
 ##
 # @todo (ASC 5/21/25):
-# - Improved control over configuration options i.e., set source IDs
-# - Read path for filter from env?
-# - Configuration of ringFragmentSource is inflexible and doesn't cover
-#   enough of the possible cases of rawdata input and/or building data
-#
+# - Improved control over configuration options i.e., set source I
  
 lappend auto_path [file join $::env(DAQROOT) TclLibs]
 
+package require cmdline
 package require EventBuilder
+package require evbcallouts
 package require EVB::connectionList
 package require EVB::GUI
-
-package require cmdline
-package require evbcallouts
 package require ring
 package require Tk
 package require ui
-   
+
+wm title . "FRIB-E2SAR EVB"
+
 # Options:
 
 set usage "Setup EVB for FRIB-E2SAR workflows\nOptions:"
 set options {
     {source.arg  ""   "Reassembled data ringbuffer source basename"}
     {sink.arg    ""   "Ringbuffer sink for built data"}
-    {build.arg   1    "Build events (yes,no = 1,0)"}
     {glomdt.arg  1000 "Event build coincidence window in nanoseconds"}
     {window.arg  20   "Event orderer build window in seconds"}
     {ddasraw.arg 0    "NSCLDAQ 12 DDAS raw data yes/no = 1/0"}
@@ -69,79 +65,58 @@ foreach option $mandatory {
 
 set srcname   [dict get $parsed source]
 set evbring   [dict get $parsed sink]
-set glombuild [dict get $parsed build]
 set glomdt    [dict get $parsed glomdt]
 set window    [dict get $parsed window]
 set ddasraw   [dict get $parsed ddasraw]
-
-# Start EVB:
-
-wm title . "FRIB-E2SAR EVB"
 
 ##
 # @brief Configure and launch the ringFragmentSources input to the EVB pipe
 # @details
 # Users are expected to modify this function for thier particular application
 # by adding and starting the proper clients.
-# @param build Build events yes/no = 1/0
+# @param srcname Data source name (not URI)
 #
-proc launchRingSources {ddasraw srcname} {
+proc launchRingSources {srcname} {
     set daqbin $::env(DAQBIN)
 
+    set port [EVBC::getOrdererPort]
+    puts "Orderer listening on $port"
+    
     ##
     # Add additional clients here:
     #
     
-    set reas0 "[file join $daqbin ringFragmentSource] --evbhost=localhost --ids=0 --expectbodyheaders "
-	   
-    if {$ddasraw == 1} { # Building events on recv
-	   set port [EVBC::getOrdererPort]
-	   puts "Orderer listening on $port"
-	   append reas0 "--evbport=$port --info=${srcname}_t00_sort --ring=tcp://localhost/${srcname}_t00_sort"
-       } else { # Otherwise read from the recv ringbuffer
-	   append reas0 "--evbname myOrderer --info=${srcname}_t00 --ring=tcp://localhost/${srcname}_t00 "
-       }
-	  
-    puts $reas0
-
+    set reas0 "[file join $daqbin ringFragmentSource]  \
+    	--evbhost=localhost			       \
+	--evbport=$port 			       \
+	--ring=tcp://localhost/${srcname}_sort	       \
+	--ids=0					       \
+	--info=${srcname}_sort 			       \
+    	--expectbodyheaders"		       	       
+    
     ##
     # Start all clients:
     #
     
     exec {*}$reas0 &
+    #set fd [open "| $reas0 |& cat" "r"]
+    #fconfigure $fd -blocking 0 -buffersize 1000000 -translation binary
 }
 
+set Xoff [expr {128*1024*1024}]
+set Xon  [expr {96*1024*1024}]
+set perQXoff 400000000
+set perQXon  50000000
+
 EVBC::configParams window $window
+#EVBC::configParams XoffThreshold $Xoff
+#EVBC::configParams XonThreshold $Xon
+#EVBC::configParams perQXoffThreshold $perQXoff
+#EVBC::configParams perQXonThreshold $perQXon
 
-if {$glombuild == 1} {
-       EVBC::initialize -gui off -destring $evbring -glombuild $glombuild -glomdt $glomdt
-       EVBC::onBegin
-   } else {
-       set daqbin $::env(DAQBIN)
-       set startScript [file join $daqbin startOrderer]
-       set orderer [file join $daqbin Orderer]
-       set pipecommand "$orderer 2> orderer.err"
+EVBC::initialize -gui on -destring $evbring -glombuild on -glomdt $glomdt
 
-       set glom "[file join $daqbin glom] --dt=$glomdt -s 0xff --nobuild"
-       append pipecommand " | $glom"
-
-       set filter "~/frib-e2sar/bin/evbfilter"
-       append pipecommand " | $filter"
-
-       set stdintoring "[file join $daqbin stdintoring] $evbring"
-       append pipecommand " | $stdintoring |& cat"
-
-       set pipefd [open "| $pipecommand" w+]
-
-       fconfigure $pipefd -buffering line -blocking 0
-
-       puts $pipefd "source $startScript"
-       ::flush $pipefd
-       puts $pipefd "set ::OutputRing $evbring"
-       ::flush $pipefd
-       puts $pipefd "start myOrderer"
-       ::flush $pipefd
-   }
+EVBC::onBegin
    
 set output [Output::getInstance .output]
 grid .output -sticky nsew
@@ -150,4 +125,4 @@ grid columnconfigure . {0} -weight 1
 
 after [expr 2000]
 
-launchRingSources $ddasraw $srcname
+launchRingSources $srcname

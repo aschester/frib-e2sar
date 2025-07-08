@@ -12,10 +12,13 @@
 #
 
 ## @todo (ASC 3/6/25): Check receive rings are actually created
-## @todo (ASC 5/21/25): Raw and sorted ringbuffer names set by user (must still
-#  match what is in setup_evb.sh as ringFragmentSources feeding the evb)
-## @todo (ASC 5/22/25): Multithreaded receive requires multiple ddasSorts OR
-#  try to put all data into a single sink ringbuffer for sorting
+
+##
+# @note (ASC 7/8/25): See run_reassembler.py for beginnings of an application
+# object pattern method to run pipeline components as subprocesses in
+# interruptable threads, a nice place to start from for a bit cleaner
+# organization and monitoring
+#
 
 ##
 # @note (ASC 5/9/25): Assumes frib-e2sar binaries installed at
@@ -57,7 +60,7 @@ def print_proc_results(proc):
 def reassemble_events(args):
     cmd = (f"{reasexec} --recv -i {args.ini} --ip {args.ip} "
            f"--port {args.port} -t {args.threads} --deq {args.deq} "
-           f"-d {args.duration} --basename {args.basename}")
+           f"-d {args.duration} --sinkname {args.sinkname}")
     print(f"Running reas command: {cmd}")
     proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
@@ -71,11 +74,10 @@ def reassemble_events(args):
     def handler(signum, frame):
         signame = signal.Signals(signum).name
         print(f"\nSignal handler invoked: signal {signame} ({signum})")
-        proc.send_signal(signal.Signals(signum))
         proc.wait()
         print(f"Process exited, returncode: {proc.returncode}")
         sys.exit(0)
-        
+       
     signal.signal(signal.SIGINT, handler)
     
     time.sleep(1) # Wait to ensure startup and ring creation
@@ -89,6 +91,7 @@ def reassemble_events(args):
         else:
             print_proc_results(proc)
             time.sleep(1)
+    print_proc_results(proc)
 
 ##
 # @brief Reassemble and sort raw DDAS data from NSCLDAQ 12 for event building.
@@ -102,7 +105,7 @@ def reassemble_events(args):
 def reassemble_ddas_events(args):
     rcmd = (f"{reasexec} --recv -i {args.ini} --ip {args.ip} "
             f"--port {args.port} -t {args.threads} --deq {args.deq} "
-            f"-d {args.duration} --basename {args.basename}")
+            f"-d {args.duration} --sinkname {args.sinkname}")
     print(f"Running reas command: {rcmd}")
     rproc = subprocess.Popen(shlex.split(rcmd), stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
@@ -118,25 +121,22 @@ def reassemble_ddas_events(args):
     # Sort command - single src, fixed name, see @todos:
     #
 
-    sprocs = []
-    scmds = []
-    for i in range(int(args.deq)):
-        scmd = (f"""{os.getenv("DAQBIN")}/ddasSort -s tcp://localhost/{args.basename}_t0{i} -S {args.basename}_t0{i}_sort -W {args.window}""")
-        print(f"Running sort command: {scmd}")
-        sproc = subprocess.Popen(shlex.split(scmd), stdout=subprocess.PIPE,
-                                 stderr=subprocess.STDOUT, text=True)
-        scmds.append(scmd)
-        sprocs.append(sproc)
+    scmd = (f"""{os.getenv("DAQBIN")}/ddasSort """
+            f"-s tcp://localhost/{args.sinkname} -S {args.sinkname}_sort "
+            f"-W {args.window}")
+    print(f"Running sort command: {scmd}")
+    sproc = subprocess.Popen(shlex.split(scmd), stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True)
     
-    if any(p.returncode for p in sprocs):
+    if sproc.returncode:
         print(f"ERROR: sort exited with retval {sproc.returncode}")
-        print_proc_results(p)
+        print_proc_results(sproc)
         rproc.kill()
         rproc.wait()
         sys.exit(1)
     else:
         time.sleep(2)
-        print(f"STARTED OK {all(cmd for cmd in scmds)}")
+        print(f"STARTED OK {scmd}")
         
     ##
     # @brief Define a process-aware signal handler. Communicate signals to
@@ -147,7 +147,6 @@ def reassemble_ddas_events(args):
     def handler(signum, frame):
         signame = signal.Signals(signum).name
         print(f"\nSignal handler invoked: signal {signame} ({signum})")
-        rproc.send_signal(signal.Signals(signum))
         rproc.wait()
         print(f"Reas process exited, returncode: {rproc.returncode}")
         sproc.terminate()
@@ -171,6 +170,7 @@ def reassemble_ddas_events(args):
         else:
             print_proc_results(rproc)
             time.sleep(1)
+    print_proc_results(rproc)            
 
     ##
     # If a receive duration is set we still want to exit the sorter:
@@ -202,8 +202,8 @@ def main():
                         help="number of threads/ports Reassembler is "
                         "listening on",
                         default=1)
-    parser.add_argument("-b", "--basename",
-                        help="reassembled sink ringbuffer basename",
+    parser.add_argument("-S", "--sinkname",
+                        help="reassembled sink ringbuffer sinkname",
                         default="reas")
     parser.add_argument("--deq",
                         help="number of dequeue threads (one sink per thread)",

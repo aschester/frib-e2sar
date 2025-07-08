@@ -72,6 +72,7 @@ Receiver::Receiver(po::variables_map& vm) :
     } else {
 	setInstance(this);
 	std::signal(SIGINT, ctrlCHandler);
+	std::signal(SIGTERM, ctrlCHandler);
     }
 
     /////////////////////////////////////////////////////////////////////////
@@ -187,8 +188,6 @@ Receiver::shutdown()
     }
 
     std::cout << "Stopping dequeue threads..." << std::endl;
-    std::mutex m;
-    std::lock_guard<std::mutex> lock(m);
     for (auto& t : m_deqThreads) {
 	t.interrupt();
     }

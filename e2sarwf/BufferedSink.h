@@ -77,6 +77,8 @@ public:
 
     void setTimeout(size_t timeout) { m_timeout = timeout; };
     size_t getTimeout() { return m_timeout; };
+    void setWindow(size_t window) { m_window = window; };
+    size_t getWindow() { return m_window; };
 
 private:
     /**

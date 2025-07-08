@@ -155,6 +155,8 @@ main(int argc, char* argv[])
 	 "name of data sink (without hostname or base path) [r]");
     opts("timeout", po::value<unsigned long>()->default_value(ULONG_MAX),
 	 "timeout seconds to read data from ringbuffer source [s]");
+    opts("ddasraw", po::bool_switch()->default_value(false),
+	 "data is from NSCLDAQ v12 DDAS [s]");
     opts("usect", po::bool_switch()->default_value(false),
 	 "use event counter as event number (else first timestamp) [s]");
     opts("verbose", po::value<bool>()->default_value(true),
