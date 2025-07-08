@@ -70,6 +70,7 @@ private:
     size_t m_totalBytes;     //!< Total bytes sent
     size_t m_sendCount;      //!< Number of sent event buffers
     bool m_threadsRunning;   //!< True when send loop is active
+    bool m_isDdas;           //!< Data is NSCLDAQ v12 DDAS
     bool m_useCt;            //!< Use event count as event number
     bool m_debug;            //!< Output debugging information
     bool m_verbose;          //!< Enable verbose output of configuration, etc.
@@ -162,10 +163,9 @@ private:
     void releaseToPool(boost::any a);
     /**
      * @brief Get the first timestamp from a data buffer
-     * @param pData Pointer to the buffer containing your ring items
+     * @param pData Pointer to data buffer containing ring items
      * @param bytes Size of data buffer in bytes
      * @return The timestamp of the first physics item
-     * @retval 0 If the event has no body header or no physics items in buffer
      */
     uint64_t getFirstTimestamp(u_int8_t* pData, size_t bytes);
 };

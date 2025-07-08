@@ -31,13 +31,9 @@
 #include <filesystem>
 #include <iostream>
 
-// E2SAR includes and deps:
-
 #include <e2sar.hpp>
 
-// Unified format library:
-
-#include <DataFormat.h>
+#include <DataFormat.h> // From UFMT
 #include <RingItemFactoryBase.h>
 #include <CRingItem.h>
 #include <CAbnormalEndItem.h>
@@ -51,13 +47,9 @@
 #include <CRingStateChangeItem.h>
 #include <CUnknownFragment.h>
 
-// Other NSCLDAQ includes:
-
-#include <URL.h>
+#include <URL.h>        // From NSCLDAQ
 #include <CRemoteAccess.h>
 #include <CRingBuffer.h>
-
-// Project headers:
 
 #include "FribE2sarUtils.h"
 #include "BufferPool.h"
@@ -91,6 +83,7 @@ Sender::Sender(po::variables_map& vm) :
     m_totalBytes(0),
     m_sendCount(0),
     m_threadsRunning(false),
+    m_isDdas(vm["ddasraw"].as<bool>()),
     m_useCt(vm["usect"].as<bool>()),
     m_debug(vm["debug"].as<bool>()),
     m_verbose(vm["verbose"].as<bool>())
@@ -506,7 +499,7 @@ Sender::sendBuffer(u_int8_t* pData, size_t bytes)
 	
     if (m_debug) {
 	// dumpBuffer(pData, bytes);
-	std::cout << "Sent event: " << m_sendCount << std::endl;
+	std::cout << "Sent event: "       << m_sendCount << std::endl;
 	std::cout << "\tevtNumber:      " << evtNum << std::endl;
 	std::cout << "\tdataId:         " << m_dataId << std::endl;
 	std::cout << "\tevtBufSize:     " << bytes << std::endl;
@@ -532,6 +525,13 @@ Sender::releaseToPool(boost::any a)
     m_pPool->push(static_cast<void*>(p));
 }
 
+/**
+ * @details
+ * Raw DDAS data does not have body headers. To determine the first timestamp 
+ * we need to parse the payload body and extract it from the first fragment. 
+ * Otherwise we warn the user, as we expect physics data to have body headers 
+ * containing a timestamp value.
+ */
 uint64_t
 Sender::getFirstTimestamp(u_int8_t* pData, size_t bytes)
 {
@@ -543,8 +543,25 @@ Sender::getFirstTimestamp(u_int8_t* pData, size_t bytes)
 	if (pHdr->s_type == PHYSICS_EVENT) {
 	    p += sizeof(RingItemHeader);
 	    if (*p != sizeof(BodyHeader)) {
-		std::cerr << "PHYSICS_EVENT without body header!" << std::endl;
-		return 0;
+		if (m_isDdas) {
+		    // Skip the empty body header word. First bits of body
+		    // are event size (uint32_t), module type (uint32_t),
+		    // clock calibration (double):
+		    p += 3*sizeof(uint32_t); // Skip size and type
+		    // Extract clock calibration as double:
+		    double*  pScale     = reinterpret_cast<double*>(p);
+		    double   clockScale = *pScale++;
+		    uint32_t* pBody     = reinterpret_cast<uint32_t*>(pScale);
+		    pBody++; // Pixie data word 0: event and channel Id
+		    uint32_t timeLow    = *pBody++;  // Lower 32 bits
+		    uint64_t timeHigh   = *pBody++; // Upper 16 bits
+		    uint64_t timestamp  = (timeHigh & 0xffff) << 32;
+		    return (timestamp |= timeLow)*clockScale;
+		} else {
+		    std::cerr << "PHYSICS_EVENT without body header!"
+			      << std::endl;
+		    return 0;
+		}
 	    }
 	    auto pBodyHdr = reinterpret_cast<BodyHeader*>(p);
 	    return pBodyHdr->s_timestamp;

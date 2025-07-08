@@ -31,31 +31,24 @@
 #include <filesystem>
 #include <iostream>
 
-// E2SAR includes and deps:
-
 #include <e2sar.hpp>
 
-// Unified format library:
+#include <boost/date_time/posix_time/posix_time.hpp>
 
-#include <DataFormat.h>
+#include <DataFormat.h> // From UFMT
 
-// Other NSCLDAQ includes:
-
-#include <URL.h>
-#include <Exception.h>
-
-// Project headers:
+#include <Exception.h>  // From NSCLDAQ
 
 #include "FribE2sarUtils.h"
-#include "DataSink.h"
-#include "FileDataSink.h"
-#include "RingDataSink.h"
+#include "BufferedSink.h"
 
 using namespace e2sar;
 using namespace frib_e2sar;
 using namespace ufmt;
+
 namespace po = boost::program_options;
 namespace ch = boost::chrono;
+namespace pt = boost::posix_time;
 
 Receiver* Receiver::m_pInstance = nullptr;
 
@@ -63,9 +56,9 @@ Receiver::Receiver(po::variables_map& vm) :
     m_proto(vm["proto"].as<std::string>()),
     m_hostName(vm["hostname"].as<std::string>()),
     m_basePath(vm["basepath"].as<std::string>()),
-    m_baseName(vm["basename"].as<std::string>()),
+    m_sinkName(vm["sinkname"].as<std::string>()),
     m_duration(vm["duration"].as<int>()),
-    m_deqThreads(vm["deq"].as<size_t>()),
+    m_numThreads(vm["deq"].as<size_t>()),
     m_threadsRunning(false),
     m_debug(vm["debug"].as<bool>()),
     m_verbose(vm["verbose"].as<bool>())
@@ -79,15 +72,14 @@ Receiver::Receiver(po::variables_map& vm) :
     } else {
 	setInstance(this);
 	std::signal(SIGINT, ctrlCHandler);
+	std::signal(SIGTERM, ctrlCHandler);
     }
 
     /////////////////////////////////////////////////////////////////////////
     // Configure data sink
     //
 
-    auto daqVersion = vm["nscldaq-version"].as<int>();    
-    FormatSelector::SupportedVersions version = mapVersion(daqVersion);
-    auto& factory = FormatSelector::selectFactory(version);
+    m_pSink = std::make_unique<BufferedSink>(makeSinkUri());
 
     /////////////////////////////////////////////////////////////////////////
     // Read ini file and get flags
@@ -110,7 +102,7 @@ Receiver::Receiver(po::variables_map& vm) :
     EjfatURI::TokenType tt{EjfatURI::TokenType::instance};
     bool preferV6 = false; // For now always Ipv4
     auto ejfatUri = getUri(vm["uri"].as<std::string>(), tt, preferV6);
-
+    
     /////////////////////////////////////////////////////////////////////
     // Instantiate Reassembler
     //
@@ -139,23 +131,18 @@ int
 Receiver::operator()()
 {
     m_threadsRunning = true;
+    
     boost::thread statsThread(boost::bind(&Receiver::statsThread, this));
     
     if (prepareToReceive()) {
 	throw std::runtime_error("Failed to initialize and start Reassembler");
     }    
 
-    std::vector<boost::thread> threads;
-    std::vector<std::unique_ptr<DataSink>> sinks;
-    
-    for (size_t i = 0; i < m_deqThreads; i++) {
-	std::unique_ptr<DataSink> pSink(makeDataSink(i));
-	boost::thread t(std::bind(&Receiver::receiveEvents, this, pSink.get()));
-	threads.push_back(std::move(t));
-	sinks.push_back(std::move(pSink));
+    for (size_t i = 0; i < m_numThreads; i++) {
+	m_deqThreads.push_back(boost::thread(&Receiver::receiveEvents, this));
     }
     
-    for (auto& t : threads) {
+    for (auto& t : m_deqThreads) {
      	t.join();
     }
     
@@ -182,21 +169,34 @@ Receiver::ctrlCHandler(int sig)
 
 void
 Receiver::shutdown()
-{
-    std::cout << "Stopping threads" << std::endl;
+{   
+    std::cout << "Stopping receiver threads..." << std::endl;
     m_threadsRunning = false;
     ch::milliseconds duration(1000);
     boost::this_thread::sleep_for(duration);
     
     if (m_pReassembler) {
-	std::cout << "Deregistering worker" << std::endl;
+	std::cout << "Deregistering worker..." << std::endl;
 	auto rv = m_pReassembler->deregisterWorker();
 	if (rv.has_error()) {
-	    std::cerr << "Unable to deregister worker on exit: "
+	    std::cout << "Unable to deregister worker on exit: "
 		      << rv.error().message() << std::endl;
+	} else {
+	    std::cout << "Worker deregistered" << std::endl;
 	}
 	m_pReassembler->stopThreads();
     }
+
+    std::cout << "Stopping dequeue threads..." << std::endl;
+    for (auto& t : m_deqThreads) {
+	t.interrupt();
+    }
+    for (auto& t : m_deqThreads) {
+	t.join();	
+    }
+
+    std::cout << "Stopping output thread..." << std::endl;
+    m_pSink->stopThreads();
     
     boost::this_thread::sleep_for(duration);
 }
@@ -205,7 +205,14 @@ Receiver::shutdown()
  * @details
  * Typically to be called as part of a monitoring thread. There is no 
  * signaling mechanism between threads: requires m_threadsRunning == true 
- * when the caller thread starts or there is no output.
+ * when the caller thread starts or there is no output. The stats types are:
+ *  - 0 EventNum_t enqueueLoss;
+ *  - 1 EventNum_t reassemblyLoss;
+ *  - 2 EventNum_t eventSuccess;
+ *  - 3 int lastErrno; 
+ *  - 4 int grpcErrCnt; 
+ *  - 5 int dataErrCnt; 
+ *  - 6 E2SARErrorc lastE2SARError; 
  */
 void
 Receiver::statsThread()
@@ -224,17 +231,11 @@ Receiver::statsThread()
 	    }
             lostEvents.push_back(rvle.value());
         }
+
+	pt::ptime currentTime(pt::second_clock::local_time());
 	
-	/*
-	 *  - 0 EventNum_t enqueueLoss;
-	 *  - 1 EventNum_t reassemblyLoss;
-	 *  - 2 EventNum_t eventSuccess;
-	 *  - 3 int lastErrno; 
-	 *  - 4 int grpcErrCnt; 
-	 *  - 5 int dataErrCnt; 
-	 *  - 6 E2SARErrorc lastE2SARError; 
-	 */
-	std::cout << "Stats:" << std::endl;
+	std::cout << pt::to_simple_string(currentTime)
+		  << " Stats:" << std::endl;
         std::cout << "\tEvents Received: " << stats.eventSuccess << std::endl;
         std::cout << "\tEvents Lost in reassembly: "
 		  << stats.reassemblyLoss << std::endl;
@@ -317,7 +318,7 @@ Receiver::prepareToReceive()
 }
 
 int
-Receiver::receiveEvents(DataSink* pSink)
+Receiver::receiveEvents()
 {
     // Received event information and receiver config. The extent of good
     // data for a particular event is defined by evtBufSize.
@@ -329,124 +330,69 @@ Receiver::receiveEvents(DataSink* pSink)
     size_t     totalBytes = 0;  // Total bytes written
     
     auto start = ch::steady_clock::now();
-    
-    while (m_threadsRunning) {
-	auto rv = m_pReassembler->getEvent(&evtBuf, &evtBufSize,
-					   &evtNum, &dataId);
 
-	auto now = ch::steady_clock::now();
-	if (m_duration != 0
-	    && (now - start) > ch::seconds(m_duration)) {
-	    break;
-	}
-	
-	if (rv.has_error()) {
-	    std::cerr << "Reassembler failed to get event: "
-		      << rv.error().message() << " with error code "
-		      << rv.error().code() << std::endl;
-	    return EXIT_FAILURE;
-	}
+    try {
+	while (true) {
+	    boost::this_thread::interruption_point();
 
-	if (rv.value() == -1) { // Queue is empty
-	    continue;
-	}
-	
-	totalBytes += evtBufSize;
-	
-	if (m_debug) {
-	    // dumpBuffer(evtBuf, evtBufSize);
-	    std::cout << "Received event:  " << std::endl;
-	    std::cout << "\tevtNumber:    " << evtNum << std::endl;
-	    std::cout << "\tdataId:       " << dataId << std::endl;
-	    std::cout << "\tevtBufSize:   " << evtBufSize << std::endl;
-	    std::cout << "\ttotalBytes:   " << totalBytes << std::endl;
-	}
+	    // evtBuf points either to memory allocated in the Reassembler
+	    // (or nullptr if no data to output is queued):
 
-	write(evtBuf, evtBufSize, pSink);
+	    auto rv = m_pReassembler->getEvent(&evtBuf, &evtBufSize,
+					       &evtNum, &dataId);
+
+	    auto now = ch::steady_clock::now();
+	    if (m_duration != 0	&& (now - start) > ch::seconds(m_duration)) {
+		throw boost::thread_interrupted();
+	    }
 	
-	delete evtBuf;
-	evtBuf = nullptr;
+	    if (rv.has_error()) {
+		std::cerr << "Reassembler failed to get event: "
+			  << rv.error().message() << " with error code "
+			  << rv.error().code() << std::endl;
+		return EXIT_FAILURE;
+	    }
+
+	    if (rv.value() == -1) { // Queue is empty
+		continue;
+	    }
+
+	    totalBytes += evtBufSize;
+		
+	    if (m_debug) {
+		// dumpBuffer(evtBuf, evtBufSize);
+		std::cout << "Received event:  " << std::endl;
+		std::cout << "\tevtNumber:    " << evtNum << std::endl;
+		std::cout << "\tdataId:       " << dataId << std::endl;
+		std::cout << "\tevtBufSize:   " << evtBufSize << std::endl;
+		std::cout << "\ttotalBytes:   " << totalBytes << std::endl;
+	    }
+
+	    // Hands data off to sink, which is now responsible for deletion:
+
+	    m_pSink->addData(evtNum, evtBuf, evtBufSize);
+	}
+    }
+    catch (const boost::thread_interrupted& e) {
+	std::cout << "Interrupted dequeue thread "
+		  << boost::this_thread::get_id()
+		  << std::endl;
     }
     
     return EXIT_SUCCESS;
 }
 
-/**
- * @details
- * Creates iovecs of data and calls the sink's `putV()` method to do the 
- * actual write.
- */
-void
-Receiver::write(void* pData, size_t nBytes, DataSink* pSink)
-{
-    auto p = static_cast<u_int8_t*>(pData);
-    size_t nItems = countRingItems(p, nBytes);
-    std::vector<iovec> iovs(nItems);
-    
-    for (size_t i = 0; i < nItems; i++) {
-	iovs[i].iov_base = p;
-	iovs[i].iov_len = itemSize(p);
-	p = static_cast<u_int8_t*>(nextItem(p));
-    }
-
-    pSink->putV(iovs.data(), iovs.size());
-}
-
-DataSink*
-Receiver::makeDataSink(size_t threadNum)
-{
-    URL url(makeSinkUri(threadNum));
-    std::string proto(url.getProto());
-    std::string path(url.getPath());
-    if (proto == "tcp" || proto == "ring") {
-	return new RingDataSink(path);
-    } else if (proto == "file") {
-	return new FileDataSink(path);
-    } else {
-	throw std::runtime_error("Unknown protocol for sink " + proto);
-    }
-}
-
 std::string
-Receiver::makeSinkUri(size_t threadNum)
+Receiver::makeSinkUri()
 {
     char uri[1024]; // Hopefully big enough...
     if (m_proto == "ring" || m_proto == "tcp") {
-	sprintf(uri, "%s://%s/%s_t%.2d", m_proto.c_str(),
-		m_hostName.c_str(), m_baseName.c_str(), threadNum);
+	sprintf(uri, "%s://%s/%s", m_proto.c_str(),
+		m_hostName.c_str(), m_sinkName.c_str());
     } else if (m_proto == "file") {
-	sprintf(uri, "%s://%s/%s_t%.2d.evt", m_proto.c_str(),
-		m_basePath.c_str(), m_baseName.c_str(), threadNum);
+	sprintf(uri, "%s://%s/%s.evt", m_proto.c_str(),
+		m_basePath.c_str(), m_sinkName.c_str());
     }
     
     return std::string(uri);
-}
-
-size_t
-Receiver::itemSize(void* pData)
-{
-    return static_cast<RingItemHeader*>(pData)->s_size;
-}
-
-void*
-Receiver::nextItem(void* pData)
-{
-    size_t n = itemSize(pData);
-    uint8_t* p = static_cast<uint8_t*>(pData);
-    p += n;
-    
-    return p;
-}
-
-size_t
-Receiver::countRingItems(void* pData, size_t nBytes)
-{
-    size_t result(0);
-    while (nBytes) {
-        result++;
-        nBytes -= itemSize(pData);
-        pData   = nextItem(pData);
-    }
-    
-    return result;
 }

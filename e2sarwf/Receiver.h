@@ -29,15 +29,17 @@
 #define RECIEVER_H
 
 #include <memory>
+#include <vector>
 
 #include <boost/program_options.hpp>
+#include <boost/thread.hpp>
 
 #include <NSCLDAQFormatFactorySelector.h>
 
 namespace e2sar {
     class Reassembler;
 }
-class DataSink;
+class BufferedSink;
 
 /**
  * @class Receiver
@@ -62,14 +64,17 @@ private:
     std::string m_proto;    //!< Protocol for data sink
     std::string m_hostName; //!< Hostname for ringbuffer data sink
     std::string m_basePath; //!< Base path for file data sink
-    std::string m_baseName; //!< Base name of sink
+    std::string m_sinkName; //!< Base name of sink
     int m_duration;         //!< Run duration in seconds
-    size_t m_deqThreads;    //!< Number of dequeue threads reading data
+    size_t m_numThreads;    //!< Number of dequeue threads reading data
     bool m_threadsRunning;  //!< True while running
     bool m_debug;           //!< Enable debugging output
     bool m_verbose;         //!< Enable verbose output of e.g, configuration
 
+    std::vector<boost::thread> m_deqThreads; //!< Dequeue threads
+
     std::unique_ptr<e2sar::Reassembler> m_pReassembler; //!< E2SAR Reassembler
+    std::unique_ptr<BufferedSink> m_pSink; //!< Sink where data is written
     
     static Receiver* m_pInstance; //!< Part of the signal-handling interface
     
@@ -124,51 +129,16 @@ private:
     int prepareToReceive();
     /**
      * @brief Receive and process data
-     * @param pSink Pointer to the data sink for this receive thread
      * @return int
      * @retval EXIT_SUCCESS Success
      * @retval EXIT_FAILURE Failure, hopefully with error message on stderr
      */
-    int receiveEvents(DataSink* pSink);
-    /**
-     * @brief Write data to a sink
-     * @param pData Data buffer to write
-     * @param nBytes Number of bytes in buffer
-     * @param pSink Pointer to data sink we're writing to
-     */
-    void write(void* pData, size_t nBytes, DataSink* pSink);
-    /**
-     * @brief Create a data sink
-     * @param threadNum Thread index to create unique sink name
-     * @throw std::runtime_error Unknown sink protocol
-     * @return Pointer to created sink
-     */
-    DataSink* makeDataSink(size_t threadNum);
+    int receiveEvents();
     /**
      * @brief Create a sink URI from a string
-     * @param threadNum Thread index to create unique sink name
-     * @return URI string for generic data sink with a thread index
+     * @return URI string for generic data sink
      */
-    std::string makeSinkUri(size_t threadNum);
-    /**
-     * @brief Return the size of the item
-     * @param pData Pointer to a ring item
-     * @return Number of bytes in that item
-     */
-    size_t itemSize(void* pData);
-    /**
-     * @brief Get pointer to beginning of next item
-     * @param pData Pointer to data block
-     * @return void* Pointer to the next item in the block
-     */
-    void* nextItem(void* pData);
-    /**
-     * @brief Count the number of items in a block of data
-     * @param pData Pointer to the data
-     * @param nBytes Number of bytes in the block
-     * @return Number of items in the block
-     */
-    size_t countRingItems(void* pData, size_t nBytes);
+    std::string makeSinkUri();
 };
 
 #endif
