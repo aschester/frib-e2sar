@@ -173,6 +173,12 @@ The above examples assume raw NSCLDAQ data coming from a DDAS system. For more i
 - In "most" cases the pipeline can safely shut itself down when it encounters and error. Ctrl-C (SIGINT) will be propagated to all child processes and is generally the safest way to exit the python scripts. In some cases hanging processes must be killed on the command line. Most likely this is going to be a stray ringFragmentSource.
 - For parallel event building from raw DDAS data, setting long accumulation windows for `reasseble.py` and `run_recv_pipe.py` may be necessary to ensure that the data are initially buffered "long enough" to ensure no late fragments are output. The window may have to be quite large: for run 72 raw data and 4 parallel raw and sorted ringbuffers, windows of 1000s were needed.
 
+## Rate issues to investigate
+
+- Rates for writing directly to file or evtlog from ringbuffer where I stuff data tested up to 300 MB/s (dd gives disk write speed of 347 MB/s for 2k 1M blocks)
+- evtlog from ddasSort max 135 MB/s or so - first bottleneck
+- all kinds of tests through evb with orderer and glom 35 MB/s, no parameters seem to have any effect on the throughput
+
 ## Appendix A: NSCLDAQ build configuration
 
 Below is an example command to configure NSCLDAQ 12.1 build to use the same version of boost and Python as the E2SAR software. This example is run from the build directory under the top-level NSCLDAQ source directory after running `autoconf -if` to generate the configuration script:
