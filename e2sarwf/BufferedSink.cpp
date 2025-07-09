@@ -58,7 +58,7 @@ BufferedSink::~BufferedSink()
     m_pOutThread->interrupt();
     m_pOutThread->join();
 
-    for (Buffer* p : m_evtList) {
+    for (auto p : m_evtList) {
 	delete p;
     }
     m_evtList.clear();
