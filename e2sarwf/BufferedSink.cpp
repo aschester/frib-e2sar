@@ -57,6 +57,11 @@ BufferedSink::~BufferedSink()
 {
     m_pOutThread->interrupt();
     m_pOutThread->join();
+
+    for (Buffer* p : m_evtList) {
+	delete p;
+    }
+    m_evtList.clear();
 }
 
 void
@@ -138,6 +143,7 @@ BufferedSink::poll()
     try {
 	auto start = ch::high_resolution_clock::now();
 	while (true) {
+	    boost::this_thread::interruption_point();
 	    auto now = ch::high_resolution_clock::now();
 	    if (queueTimeDifference() > m_window) {
 		outputData();
@@ -146,7 +152,6 @@ BufferedSink::poll()
 		outputData();
 		start = now;
 	    }
-	    boost::this_thread::interruption_point();
 	}
     }
     catch (const boost::thread_interrupted& e) {
@@ -159,13 +164,15 @@ BufferedSink::poll()
 void
 BufferedSink::outputData()
 {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
     m_lastEmitted = getLastTime();
+    
     while (!m_evtList.empty() && m_evtList.front()->s_time <= m_lastEmitted) {
-	std::lock_guard<std::mutex> lock(m_mutex);
 	std::unique_ptr<Buffer> pBuffer(m_evtList.front());
 	m_evtList.pop_front();
 	write(pBuffer->s_pData, pBuffer->s_size);
-    }    
+    }   
 }
 
 /**
