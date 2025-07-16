@@ -108,7 +108,7 @@ void
 BufferedSink::insertBuffer(Buffer* pBuffer)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-
+    
     if (pBuffer->s_time < m_lastEmitted) {
 	std::cerr << "**WARNING** Data late: current " << pBuffer->s_time
 		  << " last emitted " << m_lastEmitted << std::endl;
@@ -123,7 +123,7 @@ BufferedSink::insertBuffer(Buffer* pBuffer)
 
     // If time < earliest, put in the front:
 
-    if (pBuffer->s_time < m_evtList.front()->s_time) {
+    if (pBuffer->s_time < m_evtList.front()->s_time) {	
 	m_evtList.push_front(pBuffer);
 	return;
     }
@@ -131,10 +131,11 @@ BufferedSink::insertBuffer(Buffer* pBuffer)
     // Otherwise, search for an insertion point starting at the back:
 
     auto it = --m_evtList.end(); // Iterator to last element in the list
-    while ((*it)->s_time > pBuffer->s_time) {
+    while ((*it)->s_time > pBuffer->s_time) {	
 	--it;
     }
-    m_evtList.insert(it, pBuffer);
+    
+    m_evtList.insert(++it, pBuffer);
 }
 
 void
