@@ -95,10 +95,10 @@ namespace frib_e2sar {
     
 	std::cout << "Control plane                "
 		  << (flags.useCP ? "ON" : "OFF") << std::endl;
-	std::cout << "Event rate reporting in Sync "
-		  << (flags.zeroRate ? "OFF" : "ON") << std::endl;
-	std::cout << "Using usecs as event numbers "
-		  << (flags.usecAsEventNum ? "ON" : "OFF") << std::endl;
+	// std::cout << "Event rate reporting in Sync "
+	// 	  << (flags.zeroRate ? "OFF" : "ON") << std::endl;
+	// std::cout << "Using usecs as event numbers "
+	// 	  << (flags.usecAsEventNum ? "ON" : "OFF") << std::endl;
 	std::cout << "Number of send sockets:      "
 		  << flags.numSendSockets << std::endl;
 	std::cout << (flags.useCP ?
@@ -158,8 +158,8 @@ namespace frib_e2sar {
 	std::cout << "\tconnectedSocket\t" << flags.connectedSocket
 		  << std::endl;
 	std::cout << "\tuseCP\t\t" << flags.useCP << std::endl;
-	std::cout << "\tzeroRate\t" << flags.zeroRate << std::endl;
-	std::cout << "\tusecAsEventNum\t" << flags.usecAsEventNum << std::endl;
+	// std::cout << "\tzeroRate\t" << flags.zeroRate << std::endl;
+	// std::cout << "\tusecAsEventNum\t" << flags.usecAsEventNum << std::endl;
 	std::cout << "\tsyncPeriodMs\t" << flags.syncPeriodMs << std::endl;
 	std::cout << "\tsyncPeriods\t" << flags.syncPeriods << std::endl;
 	std::cout << "\tmtu\t\t" << flags.mtu << " (bytes)" << std::endl;
