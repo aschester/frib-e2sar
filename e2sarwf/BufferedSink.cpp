@@ -40,9 +40,17 @@ using namespace ufmt;
 namespace ch = boost::chrono;
 
 /**
+ * @todo (ASC 7/16/25): Need a mutex to check first, last, dt values from 
+ * queue. Logic for time checks could be moved entirely into `poll()` and 
+ * locked. Can create output list to queue buffers for writing and unlock 
+ * queue after the list is created to reduce deadlocked access to the queue 
+ * while outputting data - support adding new data while doing I/O.
+ */
+
+/**
  * @details
  * Create the sink from the passed URI. It is up to the caller to ensure that 
- * the URI string is well formed.
+ * the URI string is well formed. Starts output thread.
  */
 BufferedSink::BufferedSink(std::string uri, size_t timeout, size_t window) :
     m_timeout(timeout),
@@ -108,7 +116,7 @@ void
 BufferedSink::insertBuffer(Buffer* pBuffer)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-
+    
     if (pBuffer->s_time < m_lastEmitted) {
 	std::cerr << "**WARNING** Data late: current " << pBuffer->s_time
 		  << " last emitted " << m_lastEmitted << std::endl;
@@ -123,7 +131,7 @@ BufferedSink::insertBuffer(Buffer* pBuffer)
 
     // If time < earliest, put in the front:
 
-    if (pBuffer->s_time < m_evtList.front()->s_time) {
+    if (pBuffer->s_time < m_evtList.front()->s_time) {	
 	m_evtList.push_front(pBuffer);
 	return;
     }
@@ -131,10 +139,11 @@ BufferedSink::insertBuffer(Buffer* pBuffer)
     // Otherwise, search for an insertion point starting at the back:
 
     auto it = --m_evtList.end(); // Iterator to last element in the list
-    while ((*it)->s_time > pBuffer->s_time) {
+    while ((*it)->s_time > pBuffer->s_time) {	
 	--it;
     }
-    m_evtList.insert(it, pBuffer);
+    
+    m_evtList.insert(++it, pBuffer);
 }
 
 void

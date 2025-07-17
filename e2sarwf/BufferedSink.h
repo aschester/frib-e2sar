@@ -22,10 +22,11 @@
 #ifndef BUFFEREDSINK_H
 #define BUFFEREDSINK_H
 
-#include <memory>
-#include <string>
+#include <atomic>
 #include <deque>
+#include <memory>
 #include <mutex>
+#include <string>
 
 namespace boost {
     class thread;
@@ -68,7 +69,7 @@ private:
     
 public:
     /** @brief Construct from URI */
-    BufferedSink(std::string uri, size_t timeout=2, size_t window=10);
+    BufferedSink(std::string uri, size_t timeout=2, size_t window=300);
     /** @brief Destructor */
     ~BufferedSink();
 
