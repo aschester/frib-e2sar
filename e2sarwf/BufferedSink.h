@@ -46,8 +46,19 @@ struct Buffer
     void* s_pData;   //!< The data
     size_t s_size;   //!< Size of the data buffer
 
+    /** 
+     * @brief Constructor
+     * @param time Timestamp (time or event number) used for sorting
+     * @param pData Pointer to buffer data
+     * @param size Buffer size in bytes
+     */
     Buffer(uint64_t time, void* pData, size_t size)
 	: s_time(time), s_pData(pData), s_size(size) {};
+    /** 
+     * @brief Destructor 
+     * @details
+     * Free memory pointed to by pData 
+     */
     ~Buffer() { free(s_pData); };
 };
 
@@ -62,23 +73,51 @@ private:
     size_t m_timeout; //!< Timeout seconds for outputting data
     uint64_t m_window; //!< Sliding window for outputting data
     uint64_t m_lastEmitted; //!< s_time value of last Buffer emitted
-    std::deque<Buffer*> m_evtList; //!< List of events sorted by timestamp
+    std::deque<Buffer*> m_evtList; //!< Queue of events sorted by timestamp
     std::unique_ptr<DataSink> m_pSink; //!< Our data sink
     std::unique_ptr<boost::thread> m_pOutThread; //!< Thread for output
     std::mutex m_mutex; //!< Mutex for locking container access
     
 public:
-    /** @brief Construct from URI */
+    /** 
+     * @brief Construct from URI 
+     * @param uri Sink URI string
+     * @param timeout Timeout to flush queue in seconds (default=2)
+     * @param window Queue depth in timestamp units for flush (default=300)
+     */
     BufferedSink(std::string uri, size_t timeout=2, size_t window=300);
     /** @brief Destructor */
     ~BufferedSink();
 
+    /**
+     * @brief Add data to the queue for writing to the sink
+     * @param timestamp Event timestamp
+     * @param pData Pointer to the data buffer
+     * @param nBytes Size of data buffer in bytes
+     */
     void addData(uint64_t timestamp, void* pData, size_t nBytes);
+    /** @brief Stop and join output thread, do final flush of queue to sink */
     void stopThreads();
 
+    /**
+     * @brief Set the timeout
+     * @param timeout Timeout length in seconds
+     */
     void setTimeout(size_t timeout) { m_timeout = timeout; };
+    /**
+     * @brief Get the timeout
+     * @return Timeout length in seconds
+     */
     size_t getTimeout() { return m_timeout; };
+    /**
+     * @brief Set the queue emission window
+     * @param window Window size in timestamp units (timestamp or event count)
+     */
     void setWindow(size_t window) { m_window = window; };
+    /**
+     * @brief Get the queue emission window
+     * @return Window size in timestamp units (timestamp or event count)
+     */
     size_t getWindow() { return m_window; };
 
 private:
@@ -89,17 +128,16 @@ private:
      * @throw std::runtime_error If the sink protocol is not recognized
      */
     DataSink* makeDataSink(std::string uri);
-    
+
+    /**
+     * @brief Insert a buffer into the queue for outputting
+     * @param pBuffer Pointer to the buffer we're inserting
+     */
     void insertBuffer(Buffer* pBuffer);
+    /** @brief Check if data is ready to be output and output it if so */
     void poll();
+    /** @brief Write data to the sink */
     void outputData();
-    uint64_t getFirstTime() {
-	return (m_evtList.empty() ? 0 : m_evtList.front()->s_time);
-    };
-    uint64_t getLastTime() {
-	return (m_evtList.empty() ? 0 : m_evtList.back()->s_time);
-    };
-    uint64_t queueTimeDifference() { return getLastTime() - getFirstTime(); };
     /**
      * @brief Write data to a sink
      * @param pData Data buffer to write

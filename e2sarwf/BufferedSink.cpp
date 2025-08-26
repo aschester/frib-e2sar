@@ -40,11 +40,19 @@ using namespace ufmt;
 namespace ch = boost::chrono;
 
 /**
- * @todo (ASC 7/16/25): Need a mutex to check first, last, dt values from 
- * queue. Logic for time checks could be moved entirely into `poll()` and 
- * locked. Can create output list to queue buffers for writing and unlock 
- * queue after the list is created to reduce deadlocked access to the queue 
- * while outputting data - support adding new data while doing I/O.
+ * @todo (ASC 8/1/25): Timestamp or event number for window? Former assumes 
+ * PHYSICS_EVENT data with valid timestamps, event counter is generic but 
+ * the window definition must change. _Probably_ a matter of preference, but
+ * switching between event ID types requires recompiling.
+ */
+
+/**
+ * @todo (ASC 8/1/25): Use a buffer pool to avoid newing a buffer every time.
+ */
+
+/**
+ * @todo (ASC 8/1/25): Is last time from poll the same as when outputting?
+ * Get last time under lock prior to calling `outputData()`?
  */
 
 /**
@@ -72,6 +80,10 @@ BufferedSink::~BufferedSink()
     m_evtList.clear();
 }
 
+/**
+ * @details
+ * The Buffer new'd here is deleted by the output thread.
+ */
 void
 BufferedSink::addData(uint64_t timestamp, void* pData, size_t nBytes)
 {
@@ -112,6 +124,13 @@ BufferedSink::makeDataSink(std::string uri)
     }
 }
 
+/**
+ * @details
+ * Event buffer times, whether derived from event timestamps or a 64-bit 
+ * counter, are expected to be monotonically increasing. If data is observed 
+ * with a timestamp less than the last timestamp emitted by the buffered 
+ * sink, we have a problem.
+ */
 void
 BufferedSink::insertBuffer(Buffer* pBuffer)
 {
@@ -154,13 +173,30 @@ BufferedSink::poll()
 	while (true) {
 	    boost::this_thread::interruption_point();
 	    auto now = ch::high_resolution_clock::now();
-	    if (queueTimeDifference() > m_window) {
+
+	    // Check and see if there is any data ready for outputting:
+	    uint64_t td = 0;
+	    {
+		std::lock_guard<std::mutex> lock(m_mutex);
+		
+		// Must have two events for a difference:
+		if (m_evtList.size() >= 2) {
+		    td = m_evtList.back()->s_time - m_evtList.front()->s_time;
+		}		
+	    }
+
+	    // Either there's enough data to output or we've hit a time limit,
+	    // or not... and we wait until one of those things happens:
+	    if (td > m_window) {
 		outputData();
 		start = now;
 	    } else if (now - start > ch::seconds(m_timeout)) {
 		outputData();
 		start = now;
 	    }
+	    
+	    // Prevent busy waiting, let data accumulate:
+	    boost::this_thread::sleep_for(boost::chrono::milliseconds(10));
 	}
     }
     catch (const boost::thread_interrupted& e) {
@@ -173,15 +209,26 @@ BufferedSink::poll()
 void
 BufferedSink::outputData()
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    // Queue data for output under the lock:
+    std::vector<std::unique_ptr<Buffer>> outQ; // Ready for writing
+    {
+	std::lock_guard<std::mutex> lock(m_mutex);
     
-    m_lastEmitted = getLastTime();
+	m_lastEmitted = m_evtList.empty() ? 0 : m_evtList.back()->s_time;
     
-    while (!m_evtList.empty() && m_evtList.front()->s_time <= m_lastEmitted) {
-	std::unique_ptr<Buffer> pBuffer(m_evtList.front());
-	m_evtList.pop_front();
-	write(pBuffer->s_pData, pBuffer->s_size);
-    }   
+	while (!m_evtList.empty()
+	       && m_evtList.front()->s_time <= m_lastEmitted) {
+	    std::unique_ptr<Buffer> pBuffer(m_evtList.front());
+	    m_evtList.pop_front();
+	    outQ.push_back(std::move(pBuffer));
+	}
+    }
+
+    // Queued data can be output:
+    for (const auto& p : outQ) {
+	write(p->s_pData, p->s_size);
+    }
+    
 }
 
 /**

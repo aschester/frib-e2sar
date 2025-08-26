@@ -15,6 +15,10 @@
 # run_reassembler.py.
 #
 
+##
+# @todo (ASC 8/8/25): Exit everything if the EVB GUI closes.
+#
+
 import argparse
 import os
 import shlex
@@ -136,61 +140,68 @@ if __name__ == "__main__":
     ##
     # Processing loop:
     #
-    
-    create_sink(args.sink) # Make sure the sink exists
-    
+
     evbcmd = (f"{args.startup} -source {args.source} -sink {args.sink} "
               f"-glomdt {args.glomdt} -window {args.window} "
               f"-ddasraw {ddasraw}")
     print(f"[evbcmd] {evbcmd}")
     
-    evbproc = subprocess.Popen(shlex.split(evbcmd), stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT, text=True)
-
-    # Poll the process for ~few seconds to ensure its started properly:
-    pollct = 0
-    while pollct < 5:
-        evbproc.poll()
-        if evbproc.returncode:
-            print(f"ERROR: {evbcmd} failed to start with returncode "
-                  f"{evbproc.returncode}")
-            print(f"evbproc process output:")
-            for line in evbproc.stdout:
-                print(line, end="")
-            sys.exit(1)
-        pollct += 1
-        time.sleep(1)
+    logcmd = (f"{daqbin}/eventlog -s tcp://localhost/{args.sink} "
+              f"-n {args.number_of_sources} -S {args.segment_size} "
+              f"--oneshot")
     
-    ##
-    # Start and run pipeline to write data to a sink, if enabled:
-    #
+    # Run the processing loop forever:
+    
+    while True:
+            
+        create_sink(args.sink) # Make sure the sink exists
+    
+        evbproc = subprocess.Popen(shlex.split(evbcmd), stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, text=True)
 
-    if args.logdata:
-        logcmd = (f"{daqbin}/eventlog -s tcp://localhost/{args.sink} "
-                  f"-n {args.number_of_sources} -S {args.segment_size} "
-                  f"--oneshot")
-        print(f"[logcmd] {logcmd}")
-        print("Recording run...",end="")
-        sys.stdout.flush()
-        logproc = subprocess.run(shlex.split(logcmd), capture_output=True,
-                                 text=True)
-        
-        try:
-            logproc.check_returncode()
-        except subprocess.CalledProcessError as e:
-            print(f"ERROR: {e} {logproc.stdout} {logproc.stderr}")
-            print("Killing evb...")
-            evbproc.kill() # Kill off pipe if the event logger fails
-            evbproc.wait()
-            sys.exit(1)
+        # Poll the evb process for a second to ensure it started properly:
+        pollct = 0
+        while pollct < 10:
+            evbproc.poll()
+            if evbproc.returncode:
+                print(f"ERROR: {evbcmd} failed to start with returncode "
+                      f"{evbproc.returncode}")
+                print(f"evbproc process output:")
+                for line in evbproc.stdout:
+                    print(line, end="")
+                sys.exit(1)
+            pollct += 1
+            time.sleep(0.1)
+
+
+        # Start eventlog if enabled:
+        if args.logdata:
+            print(f"[logcmd] {logcmd}")
+            print("Recording run...",end="")
+            sys.stdout.flush()
+            logproc = subprocess.run(shlex.split(logcmd), capture_output=True,
+                                     text=True)
+
+            try:
+                logproc.check_returncode()
+            except subprocess.CalledProcessError as e:
+                print(f"ERROR: {e} {logproc.stdout} {logproc.stderr}")
+                print("Killing evb...")
+                evbproc.kill() # Kill off pipe if the event logger fails
+                evbproc.wait()
+                sys.exit(1)
+            else:
+                print("Done")
+                sys.stdout.flush()            
+                print(f"{logcmd} Completed with returncode "
+                      f"{logproc.returncode}")
+                time.sleep(2)            
+                evbproc.kill()
+                evbproc.wait()
+                print(f"{evbcmd} Completed with returncode "
+                      f"{evbproc.returncode}")
         else:
-            print("Done")
-            sys.stdout.flush()            
-            print(f"{logcmd} Completed with returncode {logproc.returncode}")
-            time.sleep(2)            
-            evbproc.kill()
+            print("Not recording data...")
             evbproc.wait()
-            print(f"{evbcmd} Completed with returncode {evbproc.returncode}")
-    else:
-        print("Not recording data...")
-        evbproc.wait()    
+
+        time.sleep(1) # Wait a second before restart
