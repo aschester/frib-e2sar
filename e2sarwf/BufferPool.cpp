@@ -24,9 +24,7 @@
 #include <iostream>
 
 #include <boost/lockfree/queue.hpp>
-#include <boost/pool/singleton_pool.hpp>
-#include <boost/thread.hpp>
-#include <boost/chrono.hpp>
+#include <boost/pool/pool.hpp>
 
 static const int RETRY_ATTEMPTS = 5; //!< Number of `push()` retries
 
@@ -39,7 +37,13 @@ BufferPool::BufferPool(size_t queueSize, size_t bufferSize) :
 
 BufferPool::~BufferPool()
 {
-    std::lock_guard<std::mutex> lock(std::mutex);
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    void* buffer;
+    while(m_pQueue->pop(buffer)) {
+	m_pPool->free(buffer);
+    }
+    
     m_pPool->purge_memory();
 }
 
@@ -80,18 +84,4 @@ BufferPool::push(void* pData) {
 	      << std::endl;
     std::lock_guard<std::mutex> lock(m_mutex);
     m_pPool->free(pData);
-}
-
-/****************************************************************************
- * Private functions                                                        *
- ***************************************************************************/
-
-void
-BufferPool::free()
-{
-    std::lock_guard<std::mutex> lock(m_mutex);
-    void* buffer;
-    while(m_pQueue->pop(buffer)) {
-	m_pPool->free(buffer);
-    }
 }
