@@ -19,8 +19,7 @@
 
 ##
 # @todo (ASC 5/21/25):
-# - Improved control over configuration options i.e., set source Id
-#
+# - Improved control over configuration options i.e., set source I
  
 lappend auto_path [file join $::env(DAQROOT) TclLibs]
 
@@ -80,16 +79,13 @@ set ddasraw   [dict get $parsed ddasraw]
 proc launchRingSources {srcname} {
     set daqbin $::env(DAQBIN)
 
-    set port [EVBC::getOrdererPort]
-    puts "Orderer listening on $port"
-    
     ##
     # Add additional clients here:
     #
     
     set reas0 "[file join $daqbin ringFragmentSource]  \
     	--evbhost=localhost			       \
-	--evbport=$port 			       \
+	--evbname myEvb				       \
 	--ring=tcp://localhost/${srcname}_sort	       \
 	--ids=0					       \
 	--info=${srcname}_sort 			       \
@@ -103,34 +99,55 @@ proc launchRingSources {srcname} {
     fconfigure $fd -blocking 0
 }
 
-#############
-# Defaults: #
-#############
-# Xon      3000000
-# Xoff     4000000
-# perQXon    50000
-# perQXoff  400000
+set daqbin $::env(DAQBIN)
+set orderer [file join $daqbin startOrderer]
+set program [file join $daqbin Orderer]
 
-#set Xon      30000000
-#set Xoff     40000000
-#set perQXon    500000
-#set perQXoff  4000000
+###########################################################################
+# Normal Orderer/glom pipe                                                #
+###########################################################################
 
-#EVBC::configParams window $window
-#EVBC::configParams XonThreshold $Xon
-#EVBC::configParams XoffThreshold $Xoff
-#EVBC::configParams perQXonThreshold $perQXon
-#EVBC::configParams perQXoffThreshold $perQXoff
+set pipecommand "$program 2> orderer.err"
+set glom "[file join $daqbin glom] --dt=$glomdt --timestamp-policy=latest"
+append pipecommand " | $glom"
+set stdintoring "[file join $daqbin stdintoring] $evbring"
+append pipecommand " | $stdintoring |& cat"
 
-EVBC::initialize -gui off -destring $evbring -glombuild on -glomdt $glomdt
+set pipefd [open "| $pipecommand" w+]
 
-EVBC::onBegin
+###########################################################################
+# No glom pipe                                                            #
+# Run in tmp shell script because I can't figure out how to handle        #
+# "can't read output from command: standard output was redirected" error  #
+###########################################################################
+
+#set shellscript "/tmp/run_orderer.sh"
+#set fp [open $shellscript "w"]
+#puts $fp "#!/bin/sh"
+#puts $fp "$program > /dev/null"
+#close $fp
+#file attributes $shellscript -permissions 0755
+
+#set pipefd [open "| $shellscript" w+]
+
+##
+# Setup
+#
+
+fconfigure $pipefd -buffering line -blocking 0
+
+puts $pipefd "source $orderer"
+flush $pipefd
+puts $pipefd "set ::OutputRing $evbring"
+flush $pipefd
+puts $pipefd "start myEvb"
+flush $pipefd
    
 set output [Output::getInstance .output]
 grid .output -sticky nsew
 grid rowconfigure . {0} -weight 1
 grid columnconfigure . {0} -weight 1
 
-after [expr 1000]
+after [expr 2000]
 
 launchRingSources $srcname
