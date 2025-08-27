@@ -22,11 +22,10 @@
 #ifndef BUFFERPOOL_H
 #define BUFFERPOOL_H
 
-#include <memory>
 #include <mutex>
 
-#include <boost/lockfree/lockfree_forward.hpp>
-#include <boost/pool/poolfwd.hpp>
+#include <boost/lockfree/queue.hpp>
+#include <boost/pool/pool.hpp>
 
 /**
  * @class BufferPool
@@ -53,8 +52,8 @@ namespace boost {
 class BufferPool
 {
 private:
-    std::unique_ptr<boost::lockfree::queue<void*, boost::lockfree::fixed_sized<true>>> m_pQueue; //!< Queue for storing recycled buffers
-    std::unique_ptr<boost::pool<>> m_pPool; //!< Manages storage for the class
+    boost::lockfree::queue<void*, boost::lockfree::fixed_sized<true>> m_queue; //!< Queue for storing recycled buffers
+    boost::pool<> m_pool; //!< Manages storage for the class
     std::mutex m_mutex; //!< Mutex for locking pool
     
 public:

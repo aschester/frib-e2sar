@@ -23,16 +23,13 @@
 
 #include <iostream>
 
-#include <boost/lockfree/queue.hpp>
-#include <boost/pool/pool.hpp>
-
 static const int RETRY_ATTEMPTS = 5; //!< Number of `push()` retries
 
 using namespace boost::lockfree;
 
 BufferPool::BufferPool(size_t queueSize, size_t bufferSize) :
-    m_pQueue(std::make_unique<queue<void*, fixed_sized<true>>>(queueSize)),
-    m_pPool(std::make_unique<boost::pool<>>(bufferSize))
+    m_queue(queueSize),
+    m_pool(bufferSize)
 {}
 
 BufferPool::~BufferPool()
@@ -40,11 +37,11 @@ BufferPool::~BufferPool()
     std::lock_guard<std::mutex> lock(m_mutex);
 
     void* buffer;
-    while(m_pQueue->pop(buffer)) {
-	m_pPool->free(buffer);
+    while(m_queue.pop(buffer)) {
+	m_pool.free(buffer);
     }
     
-    m_pPool->purge_memory();
+    m_pool.purge_memory();
 }
 
 /**
@@ -57,9 +54,9 @@ void*
 BufferPool::pop()
 {
     void* buffer;
-    if (!m_pQueue->pop(buffer)) {
+    if (!m_queue.pop(buffer)) {
 	std::lock_guard<std::mutex> lock(m_mutex);
-	buffer = m_pPool->malloc();
+	buffer = m_pool.malloc();
 	if (!buffer) {
 	    throw std::bad_alloc();
 	}
@@ -76,12 +73,12 @@ BufferPool::pop()
 void
 BufferPool::push(void* pData) {
     for (int i = 0; i < RETRY_ATTEMPTS; i++) {
-	if (m_pQueue->push(pData)) {
+	if (m_queue.push(pData)) {
 	    return;
 	}
     }
     std::cerr << "Failed to push buffer to queue, freeing instead..."
 	      << std::endl;
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_pPool->free(pData);
+    m_pool.free(pData);
 }

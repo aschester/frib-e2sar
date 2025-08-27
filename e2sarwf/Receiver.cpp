@@ -79,7 +79,8 @@ Receiver::Receiver(po::variables_map& vm) :
     // Configure data sink
     //
 
-    m_pSink = std::make_unique<BufferedSink>(makeSinkUri());
+    auto queueSize = vm["queue-size"].as<size_t>();
+    m_pSink = std::make_unique<BufferedSink>(makeSinkUri(), queueSize);
 
     /////////////////////////////////////////////////////////////////////////
     // Read ini file and get flags
