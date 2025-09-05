@@ -186,7 +186,6 @@ main(int argc, char* argv[])
         conflicting_options(vm, "recv", "src");
         conflicting_options(vm, "recv", "dataid");
         conflicting_options(vm, "recv", "rate");
-	conflicting_options(vm, "recv", "queue-size");
 	conflicting_options(vm, "recv", "source");
 	conflicting_options(vm, "recv", "mtu");
 	option_dependency(vm, "send", "ip");

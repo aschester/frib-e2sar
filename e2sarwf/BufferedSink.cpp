@@ -35,7 +35,7 @@
 #include "FileDataSink.h"
 #include "RingDataSink.h"
 
-const size_t BATCH_SIZE = 2048; //!< Max buffers per batch
+const size_t BATCH_SIZE = 10240; //!< Max buffers per batch
 
 using namespace ufmt;
 namespace ch = std::chrono;
