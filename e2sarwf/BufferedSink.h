@@ -52,8 +52,19 @@ struct Buffer
     void* s_pData;   //!< The data
     size_t s_size;   //!< Size of the data buffer
 
+    /** 
+     * @brief Constructor
+     * @param time Timestamp (time or event number) used for sorting
+     * @param pData Pointer to buffer data
+     * @param size Buffer size in bytes
+     */
     Buffer(uint64_t time, void* pData, size_t size)
 	: s_time(time), s_pData(pData), s_size(size) {};
+    /** 
+     * @brief Destructor 
+     * @details
+     * Free memory pointed to by pData 
+     */
     ~Buffer() { free(s_pData); };
 };
 

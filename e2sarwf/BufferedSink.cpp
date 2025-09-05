@@ -72,6 +72,10 @@ BufferedSink::~BufferedSink()
     m_sortedQueue.clear();
 }
 
+/**
+ * @details
+ * The Buffer new'd here is deleted by the output thread.
+ */
 void
 BufferedSink::addData(uint64_t timestamp, void* pData, size_t nBytes)
 {
