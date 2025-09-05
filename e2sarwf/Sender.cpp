@@ -464,7 +464,7 @@ Sender::makeDataSource(RingItemFactoryBase* pFactory,
  * @details
  * Add data to the Segmenter send queue in a non-blocking manner. The entropy 
  * value can be used to control the UDP port to which data are sent, e.g., 
- * setting dataId = entropy ensures all segments with the same dataId go to 
+ * setting entropy = dataId ensures all segments with the same dataId go to 
  * the same port; a random value will randomize the destination UDP port.
  * Entropy of zero (0) is a special case where the Segmenter provides its own
  * random entropy.

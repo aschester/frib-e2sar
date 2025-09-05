@@ -21,12 +21,11 @@
 
 #include "BufferedSink.h"
 
+#include <chrono>
 #include <iostream>
 #include <vector>
 #include <sys/uio.h>
 
-#include <boost/thread.hpp>
-#include <boost/chrono.hpp>
 
 #include <DataFormat.h> // From UFMT
 
@@ -36,48 +35,41 @@
 #include "FileDataSink.h"
 #include "RingDataSink.h"
 
+const size_t BATCH_SIZE = 10240; //!< Max buffers per batch
+
 using namespace ufmt;
-namespace ch = boost::chrono;
-
-/**
- * @todo (ASC 8/1/25): Timestamp or event number for window? Former assumes 
- * PHYSICS_EVENT data with valid timestamps, event counter is generic but 
- * the window definition must change. _Probably_ a matter of preference, but
- * switching between event ID types requires recompiling.
- */
-
-/**
- * @todo (ASC 8/1/25): Use a buffer pool to avoid newing a buffer every time.
- */
-
-/**
- * @todo (ASC 8/1/25): Is last time from poll the same as when outputting?
- * Get last time under lock prior to calling `outputData()`?
- */
+namespace ch = std::chrono;
 
 /**
  * @details
  * Create the sink from the passed URI. It is up to the caller to ensure that 
  * the URI string is well formed. Starts output thread.
  */
-BufferedSink::BufferedSink(std::string uri, size_t timeout, size_t window) :
+BufferedSink::BufferedSink(std::string uri, size_t queueSize, size_t timeout, size_t window) :
     m_timeout(timeout),
     m_window(window*1e9),
     m_lastEmitted(0),
-    m_evtList(),
+    m_inputQueue(queueSize),
+    m_sortedQueue(),
     m_pSink(std::unique_ptr<DataSink>(makeDataSink(uri))),
-    m_pOutThread(std::make_unique<boost::thread>(&BufferedSink::poll, this))
+    m_outThread(&BufferedSink::poll, this),
+    m_shutdown(false)    
 {}
 
 BufferedSink::~BufferedSink()
 {
-    m_pOutThread->interrupt();
-    m_pOutThread->join();
+    stopThreads();
 
-    for (auto p : m_evtList) {
+    Buffer* pBuffer;
+    while (m_inputQueue.pop(pBuffer)) {
+	delete pBuffer;
+    }
+    // No clear for boost::lockfree::queue
+    
+    for (auto p : m_sortedQueue) {
 	delete p;
     }
-    m_evtList.clear();
+    m_sortedQueue.clear();
 }
 
 /**
@@ -88,15 +80,28 @@ void
 BufferedSink::addData(uint64_t timestamp, void* pData, size_t nBytes)
 {
     auto pBuffer = new Buffer(timestamp, pData, nBytes);
-    insertBuffer(pBuffer);
+    
+    if (!m_inputQueue.push(pBuffer)) {
+	std::cerr << "**WARNING** Input queue full, dropping data" << std::endl;
+	delete pBuffer;
+	return;
+    }
+
+    m_dataReady.notify_one();
 }
 
 void
 BufferedSink::stopThreads()
 {
-    m_pOutThread->interrupt();
-    m_pOutThread->join();
+    m_shutdown.store(true);
+    m_dataReady.notify_all(); // Wake up output thread
+
+    if (m_outThread.joinable()) {
+	m_outThread.join();
+    }
+    
     std::cout << "Flushing remaining event buffer data..." << std::endl;
+    drainInputQueue();
     outputData();
 }
 
@@ -126,16 +131,11 @@ BufferedSink::makeDataSink(std::string uri)
 
 /**
  * @details
- * Event buffer times, whether derived from event timestamps or a 64-bit 
- * counter, are expected to be monotonically increasing. If data is observed 
- * with a timestamp less than the last timestamp emitted by the buffered 
- * sink, we have a problem.
+ * Assumes the caller holds the lock
  */
 void
 BufferedSink::insertBuffer(Buffer* pBuffer)
-{
-    std::lock_guard<std::mutex> lock(m_mutex);
-    
+{    
     if (pBuffer->s_time < m_lastEmitted) {
 	std::cerr << "**WARNING** Data late: current " << pBuffer->s_time
 		  << " last emitted " << m_lastEmitted << std::endl;
@@ -143,114 +143,172 @@ BufferedSink::insertBuffer(Buffer* pBuffer)
     
     // Can just push when list is empty or time >= last time:
     
-    if (m_evtList.empty() || (pBuffer->s_time >= m_evtList.back()->s_time)) {
-	m_evtList.push_back(pBuffer);
+    if (m_sortedQueue.empty()
+	|| (pBuffer->s_time >= m_sortedQueue.back()->s_time)) {
+	m_sortedQueue.push_back(pBuffer);
 	return;
     }
 
     // If time < earliest, put in the front:
 
-    if (pBuffer->s_time < m_evtList.front()->s_time) {	
-	m_evtList.push_front(pBuffer);
+    if (pBuffer->s_time < m_sortedQueue.front()->s_time) {	
+	m_sortedQueue.push_front(pBuffer);
 	return;
     }
 
     // Otherwise, search for an insertion point starting at the back:
 
-    auto it = --m_evtList.end(); // Iterator to last element in the list
-    while ((*it)->s_time > pBuffer->s_time) {	
-	--it;
+    auto rit = m_sortedQueue.rbegin();
+    while (rit != m_sortedQueue.rend() && (*rit)->s_time > pBuffer->s_time) {
+        ++rit;
     }
-    
-    m_evtList.insert(++it, pBuffer);
-}
-
-void
-BufferedSink::poll()
-{
-    try {
-	auto start = ch::high_resolution_clock::now();
-	while (true) {
-	    boost::this_thread::interruption_point();
-	    auto now = ch::high_resolution_clock::now();
-
-	    // Check and see if there is any data ready for outputting:
-	    uint64_t td = 0;
-	    {
-		std::lock_guard<std::mutex> lock(m_mutex);
-		
-		// Must have two events for a difference:
-		if (m_evtList.size() >= 2) {
-		    td = m_evtList.back()->s_time - m_evtList.front()->s_time;
-		}		
-	    }
-
-	    // Either there's enough data to output or we've hit a time limit,
-	    // or not... and we wait until one of those things happens:
-	    if (td > m_window) {
-		outputData();
-		start = now;
-	    } else if (now - start > ch::seconds(m_timeout)) {
-		outputData();
-		start = now;
-	    }
-	    
-	    // Prevent busy waiting, let data accumulate:
-	    boost::this_thread::sleep_for(boost::chrono::milliseconds(10));
-	}
-    }
-    catch (const boost::thread_interrupted& e) {
-	std::cout << "Interrupted output thread "
-		  << boost::this_thread::get_id()
-		  << std::endl;
-    }
-}
-
-void
-BufferedSink::outputData()
-{
-    // Queue data for output under the lock:
-    std::vector<std::unique_ptr<Buffer>> outQ; // Ready for writing
-    {
-	std::lock_guard<std::mutex> lock(m_mutex);
-    
-	m_lastEmitted = m_evtList.empty() ? 0 : m_evtList.back()->s_time;
-    
-	while (!m_evtList.empty()
-	       && m_evtList.front()->s_time <= m_lastEmitted) {
-	    std::unique_ptr<Buffer> pBuffer(m_evtList.front());
-	    m_evtList.pop_front();
-	    outQ.push_back(std::move(pBuffer));
-	}
-    }
-
-    // Queued data can be output:
-    for (const auto& p : outQ) {
-	write(p->s_pData, p->s_size);
-    }
-    
+    auto it = rit.base(); // Forward iterator
+    m_sortedQueue.insert(it, pBuffer); // Insert before iterator position
 }
 
 /**
  * @details
- * Creates iovecs of data and calls the sink's `putV()` method to do the 
- * actual write.
+ * This function is run by the output thread. Contents of the sorted queue are 
+ * modified only by the this thread. Be mindful of this if you are trying to 
+ * modify this class! 
  */
 void
-BufferedSink::write(void* pData, size_t nBytes)
+BufferedSink::poll()
 {
-    auto p = static_cast<u_int8_t*>(pData);
-    size_t nItems = countRingItems(p, nBytes);
-    std::vector<iovec> iovs(nItems);
+    auto lastOutputTime = ch::high_resolution_clock::now();
     
-    for (size_t i = 0; i < nItems; i++) {
-	iovs[i].iov_base = p;
-	iovs[i].iov_len = itemSize(p);
-	p = static_cast<u_int8_t*>(nextItem(p));
+    while (!m_shutdown.load()) {
+
+	// Move data from the input to the sorting queue:
+	
+	drainInputQueue();
+
+	// We are ready to output data if one of two things are true:
+	// 1. We have hit a timeout limit
+	// 2. The time difference between the first and last item in the
+	//    queue exceeds the emission window
+	    
+	auto now = ch::high_resolution_clock::now();
+	bool timeout = (now - lastOutputTime) > ch::seconds(m_timeout);
+	bool ready = (timeout && !m_sortedQueue.empty()); // 1. timeout
+	ready |= readyEmitFromWindow();                   // 2. window
+
+	// If we're ready to output data, do so, else sleep and wait:
+	    
+	if (ready) {
+	    outputData();
+	    lastOutputTime = now;
+	} else {
+	    std::unique_lock<std::mutex> lock(m_mutex);
+	    m_dataReady.wait_for(lock, ch::milliseconds(100));
+	}	    
+    }    
+}
+
+/**
+ * @details
+ * Output thread moves data from the input to the sorted queue in batches with 
+ * a max batch size defined by BATCH_SIZE. Contents of the sorted queue should
+ * only be modified by the output thread, though there is no real mechanism
+ * to ensure that this is the case. Be careful!
+ */
+void
+BufferedSink::drainInputQueue()
+{
+    std::vector<Buffer*> batch;
+    batch.reserve(BATCH_SIZE);
+
+    Buffer* pBuffer;
+    while (batch.size() < BATCH_SIZE && m_inputQueue.pop(pBuffer)) {
+	batch.push_back(pBuffer);
     }
 
+    if (!batch.empty()) {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	for (auto b : batch) {
+	    insertBuffer(b);
+	}
+    }
+}
+
+/**
+ * @details
+ * Thread safety requires that only the output thread call this function as 
+ * concurrent access invalidates checks on the queue times.
+ * @note (ASC 8/27/25): A safer pattern is to cordon off the output thread 
+ * into its own class...
+ */
+bool
+BufferedSink::readyEmitFromWindow()
+{
+    // At least two elements needed to check sliding window:
+    
+    if (m_sortedQueue.size() < 2) {
+	return false;
+    }
+
+    auto tdiff = m_sortedQueue.back()->s_time - m_sortedQueue.front()->s_time;
+
+    return tdiff > m_window;
+}
+
+/**
+ * @details
+ * For now we stick to the simplest approach - output everything until the 
+ * sliding window limit. 
+ * @note (ASC 8/27/25): Another interesting approach to try is to force use of 
+ * the event counter as an event number and output consecutive events - this 
+ * allows us to check if data is missing within the sliding window and 
+ * terminate the output prematurely to allow more data to come in.
+ */
+void
+BufferedSink::outputData()
+{
+    // Nothing to output, this should be impossible if we've gotten here:
+    
+    if (m_sortedQueue.empty()) {
+	std::cerr << "**WARNING** Trying to output data but the "
+		  << "sorted queue is empty " << std::endl;
+  	return;
+    }
+
+    // Queue buffers for outputting:
+    
+    auto outputUntil = m_sortedQueue.front()->s_time + m_window;
+    std::deque<std::unique_ptr<Buffer>> outputBuffers;
+    size_t totalItems = 0;
+    while (!m_sortedQueue.empty()
+	   && m_sortedQueue.front()->s_time <= outputUntil) {
+	auto pBuffer = std::unique_ptr<Buffer>(m_sortedQueue.front());
+	totalItems += countRingItems(pBuffer->s_pData, pBuffer->s_size);
+	outputBuffers.push_back(std::move(pBuffer));
+	m_sortedQueue.pop_front();
+    }
+
+    // Reset last time:
+
+    m_lastEmitted = outputBuffers.back()->s_time;
+    
+    // Consolidate all buffers into a single iovec and make a "single" write
+    // call, relying on the underlying writes to bust up the iovec into
+    // appropriate chunks if its too large:
+
+    std::vector<iovec> iovs;
+    iovs.reserve(totalItems);
+    
+    for (const auto& b : outputBuffers) {
+	auto pData = static_cast<u_int8_t*>(b->s_pData);
+	size_t nItems = countRingItems(pData, b->s_size);
+	for (size_t i = 0; i < nItems; i++) {
+	    iovs.emplace_back(iovec{pData, itemSize(pData)});	    
+	    pData = static_cast<u_int8_t*>(nextItem(pData));
+	}
+    }
+    
     m_pSink->putV(iovs.data(), iovs.size());
 }
+
+// Ring item utilities:
 
 size_t
 BufferedSink::itemSize(void* pData)

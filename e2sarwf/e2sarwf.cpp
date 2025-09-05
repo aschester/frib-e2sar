@@ -143,8 +143,8 @@ main(int argc, char* argv[])
 	 "NSCLDAQ data format major version number [s,r]");
     opts("source,s", po::value<std::string>()->default_value(""),
 	 "URI data source we're reading from [s]");
-    opts("queue-size,q", po::value<size_t>()->default_value(10000),
-	 "queue size for recycling send buffers [s]");
+    opts("queue-size,q", po::value<size_t>()->default_value(10240),
+	 "queue size for recycling send buffers [s,r]");
     opts("proto", po::value<std::string>()->default_value("ring"),
 	 "data sink URI protocol (file or ring) [r]");
     opts("hostname", po::value<std::string>()->default_value("localhost"),
@@ -186,7 +186,6 @@ main(int argc, char* argv[])
         conflicting_options(vm, "recv", "src");
         conflicting_options(vm, "recv", "dataid");
         conflicting_options(vm, "recv", "rate");
-	conflicting_options(vm, "recv", "queue-size");
 	conflicting_options(vm, "recv", "source");
 	conflicting_options(vm, "recv", "mtu");
 	option_dependency(vm, "send", "ip");
