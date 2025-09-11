@@ -84,7 +84,7 @@ Sender::Sender(po::variables_map& vm) :
     m_sendCount(0),
     m_threadsRunning(false),
     m_isDdas(vm["ddasraw"].as<bool>()),
-    m_useCt(vm["usect"].as<bool>()),
+    m_useTs(vm["useTs"].as<bool>()),
     m_debug(vm["debug"].as<bool>()),
     m_verbose(vm["verbose"].as<bool>())
 {
@@ -220,7 +220,7 @@ Sender::Sender(po::variables_map& vm) :
 	std::cout << "NSCLDAQ format version:        " << daqVersion
 		  << std::endl;
 	std::cout << "Event number is: "
-		  << (m_useCt ? "event count" : "first timestamp")
+		  << (m_useTs ? "first timestamp" : "event count")
 		  << std::endl;
 	std::cout << "--------------------------------" << std::endl;
     }
@@ -478,10 +478,10 @@ Sender::sendBuffer(u_int8_t* pData, size_t bytes)
     
     // Event number is either timestamp or event counter:
     EventNum_t evtNum;
-    if (m_useCt) {
-	evtNum = m_sendCount;
-    } else {
+    if (m_useTs) {
 	evtNum = getFirstTimestamp(pData, bytes);
+    } else {
+	evtNum = m_sendCount;
     }
     auto rvseg = m_pSegmenter->addToSendQueue(pData, bytes, evtNum,
 					      m_dataId, /*entropy=*/0,

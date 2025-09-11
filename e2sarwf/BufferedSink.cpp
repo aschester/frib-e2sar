@@ -26,7 +26,6 @@
 #include <vector>
 #include <sys/uio.h>
 
-
 #include <DataFormat.h> // From UFMT
 
 #include <URL.h>        // From NSCLDAQ
@@ -35,7 +34,7 @@
 #include "FileDataSink.h"
 #include "RingDataSink.h"
 
-const size_t BATCH_SIZE = 10240; //!< Max buffers per batch
+const size_t BATCH_SIZE = 128; //!< Max buffers per batch
 
 using namespace ufmt;
 namespace ch = std::chrono;
@@ -48,14 +47,21 @@ namespace ch = std::chrono;
 BufferedSink::BufferedSink(std::string uri, size_t queueSize, bool useTs,
 			   size_t timeout, size_t window) :
     m_timeout(timeout),
-    m_window(window*1e9),
+    m_window(window),
     m_lastEmitted(0),
     m_inputQueue(queueSize),
-    m_sortedQueue(),
-    m_pSink(std::unique_ptr<DataSink>(makeDataSink(uri))),
-    m_outThread(&BufferedSink::poll, this),
     m_shutdown(false)    
-{}
+{
+    if (useTs) {
+	window *= 1e9;
+    }
+    std::cerr << "Window size: " << m_window
+	      << (useTs ? " nanoseconds" : " events")
+	      << std::endl;
+    
+    m_pSink = std::unique_ptr<DataSink>(makeDataSink(uri));
+    m_outThread = boost::thread(&BufferedSink::poll, this);
+}
 
 BufferedSink::~BufferedSink()
 {
@@ -170,8 +176,7 @@ BufferedSink::insertBuffer(Buffer* pBuffer)
 /**
  * @details
  * This function is run by the output thread. Contents of the sorted queue are 
- * modified only by the this thread. Be mindful of this if you are trying to 
- * modify this class! 
+ * modified only by this thread.
  */
 void
 BufferedSink::poll()
@@ -200,7 +205,7 @@ BufferedSink::poll()
 	    outputData();
 	    lastOutputTime = now;
 	} else {
-	    std::unique_lock<std::mutex> lock(m_mutex);
+	    std::unique_lock<std::mutex> lock(m_conditionMutex);
 	    m_dataReady.wait_for(lock, ch::milliseconds(100));
 	}	    
     }    
@@ -208,10 +213,10 @@ BufferedSink::poll()
 
 /**
  * @details
- * Output thread moves data from the input to the sorted queue in batches with 
- * a max batch size defined by BATCH_SIZE. Contents of the sorted queue should
- * only be modified by the output thread, though there is no real mechanism
- * to ensure that this is the case. Be careful!
+ * Moves data from the input to the sorted queue in batches with a max batch 
+ * size defined by BATCH_SIZE. Intended to be called by the `poll()` function 
+ * running in the output thread. There is no protection against concurrent
+ * access, so DO NOT call this function from another thread. 
  */
 void
 BufferedSink::drainInputQueue()
@@ -225,7 +230,7 @@ BufferedSink::drainInputQueue()
     }
 
     if (!batch.empty()) {
-	std::lock_guard<std::mutex> lock(m_mutex);
+	std::unique_lock<std::mutex> lock(m_sortMutex);
 	for (auto b : batch) {
 	    insertBuffer(b);
 	}
@@ -236,18 +241,17 @@ BufferedSink::drainInputQueue()
  * @details
  * Thread safety requires that only the output thread call this function as 
  * concurrent access invalidates checks on the queue times.
- * @note (ASC 8/27/25): A safer pattern is to cordon off the output thread 
- * into its own class...
  */
 bool
 BufferedSink::readyEmitFromWindow()
 {
+    std::unique_lock<std::mutex> lock(m_sortMutex);
+
     // At least two elements needed to check sliding window:
     
     if (m_sortedQueue.size() < 2) {
 	return false;
     }
-
     auto tdiff = m_sortedQueue.back()->s_time - m_sortedQueue.front()->s_time;
 
     return tdiff > m_window;
@@ -256,46 +260,43 @@ BufferedSink::readyEmitFromWindow()
 /**
  * @details
  * For now we stick to the simplest approach - output everything until the 
- * sliding window limit. 
- * @note (ASC 8/27/25): Another interesting approach to try is to force use of 
- * the event counter as an event number and output consecutive events - this 
- * allows us to check if data is missing within the sliding window and 
- * terminate the output prematurely to allow more data to come in.
+ * sliding window limit.
  */
 void
 BufferedSink::outputData()
 {
-    // Nothing to output, this should be impossible if we've gotten here:
-    
-    if (m_sortedQueue.empty()) {
-	std::cerr << "**WARNING** Trying to output data but the "
-		  << "sorted queue is empty " << std::endl;
-  	return;
-    }
-
-    // Queue buffers for outputting:
-    
-    auto outputUntil = m_sortedQueue.front()->s_time + m_window;
     std::deque<std::unique_ptr<Buffer>> outputBuffers;
-    size_t totalItems = 0;
-    while (!m_sortedQueue.empty()
-	   && m_sortedQueue.front()->s_time <= outputUntil) {
-	auto pBuffer = std::unique_ptr<Buffer>(m_sortedQueue.front());
-	totalItems += countRingItems(pBuffer->s_pData, pBuffer->s_size);
-	outputBuffers.push_back(std::move(pBuffer));
-	m_sortedQueue.pop_front();
-    }
+    size_t itemsToOutput = 0;
+    
+    { // Acquire sort mutex to access sorted queue
+	std::unique_lock<std::mutex> lock(m_sortMutex);
 
-    // Reset last time:
+	// Nothing to output, this should be impossible if we've gotten here:
+    
+	if (m_sortedQueue.empty()) {
+	    std::cerr << "**WARNING** Trying to output data but the "
+		      << "sorted queue is empty " << std::endl;
+	    return;
+	}
 
-    m_lastEmitted = outputBuffers.back()->s_time;
+	// Queue buffers for outputting:
+    
+	auto outputUntil = m_sortedQueue.front()->s_time + m_window;
+	while (!m_sortedQueue.empty()
+	       && m_sortedQueue.front()->s_time <= outputUntil) {
+	    auto pBuffer = std::unique_ptr<Buffer>(m_sortedQueue.front());
+	    itemsToOutput += countRingItems(pBuffer->s_pData, pBuffer->s_size);
+	    outputBuffers.push_back(std::move(pBuffer));
+	    m_sortedQueue.pop_front();
+	}
+    } // Release sort mutex
     
     // Consolidate all buffers into a single iovec and make a "single" write
     // call, relying on the underlying writes to bust up the iovec into
     // appropriate chunks if its too large:
 
     std::vector<iovec> iovs;
-    iovs.reserve(totalItems);
+    iovs.reserve(itemsToOutput);
     
     for (const auto& b : outputBuffers) {
 	auto pData = static_cast<u_int8_t*>(b->s_pData);
@@ -307,6 +308,10 @@ BufferedSink::outputData()
     }
     
     m_pSink->putV(iovs.data(), iovs.size());
+
+    // Reset last time:
+
+    m_lastEmitted = outputBuffers.back()->s_time;
 }
 
 // Ring item utilities:

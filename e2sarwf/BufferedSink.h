@@ -16,7 +16,8 @@
 
 /**
  * @file BufferedSink.h
- * @brief Provides a class for managing a data sink with buffered output.
+ * @brief Provides a class for managing a data sink with some buffering to 
+ * ensure time-ordered data is in the processing pipeline.
  */
 
 #ifndef BUFFEREDSINK_H
@@ -70,34 +71,53 @@ struct Buffer
 
 /**
  * @class BufferedSink
- * @brief A class for managing a DataSink object and buffering data into it.
- * This uses a multiple-producer, single-consumer model where multiple threads 
- * may be adding data to the input queue but only the output thread can access 
- * the sorted queue and write data to the sink.
+ * @brief A class for managing a DataSink object and buffering data into it. 
+ * This implements a very simple multiple-producer, single-consumer model 
+ * where multiple (external) threads (from the Reassembler side) may be adding
+ * data to the input queue but only the output thread can access the sorted 
+ * queue and write data to the sink.
  *
- * @note (ASC 8/27/25): Add an additional constructor parameter to configure 
- * the window for ns timestamps or event counter and set the sliding window 
- * accordingly. Allows for dynamic selection of event number convention.
+ * @note If the input queue size exceeds its initial capacity, it may be 
+ * resized. There is no guarantee this resize operation is lock-free.
+ *
+ * @note (ASC 9/11/25): Single thread performs the sorting and outputting of 
+ * data, which is "good enough" for simple workflows. A more complex threaded 
+ * design may be desireable to separate the operation of moving data from the 
+ * input to the sorted queue from the actual I/O but for current applicaions 
+ * the performance is OK without it. Note that the condition varible and sort 
+ * queue are protected by different mutexes, anticipating this change.
  */
 
 class BufferedSink
 {
 private:
-    size_t m_timeout; //!< Timeout seconds for outputting data
-    uint64_t m_window; //!< Sliding window for outputting data
-    uint64_t m_lastEmitted; //!< s_time value of last Buffer emitted
-    boost::lockfree::queue<Buffer*, boost::lockfree::fixed_sized<true>> m_inputQueue; //!< Queue pre-sorted data
-    std::deque<Buffer*> m_sortedQueue; //!< Queue events sorted by s_time    
-    std::unique_ptr<DataSink> m_pSink; //!< Our data sink
-    boost::thread m_outThread; //!< Thread for output    
+    size_t m_timeout;             //!< Timeout seconds for outputting data
+    uint64_t m_window;            //!< Sliding window for outputting data
+    uint64_t m_lastEmitted;       //!< s_time value of last Buffer emitted
     std::atomic<bool> m_shutdown; //!< Shutdown coordination
+    
+    boost::lockfree::queue<Buffer*> m_inputQueue; //!< Queue pre-sorted data
+    std::deque<Buffer*> m_sortedQueue;   //!< Queue events sorted by s_time
+    
+    std::unique_ptr<DataSink> m_pSink;   //!< Our data sink
+    
+    boost::thread m_outThread;           //!< Thread for output
+    
     std::condition_variable m_dataReady; //!< Coordinate data ready for output
-    std::mutex m_mutex; //!< Condition variable "dummy" mutex
+    std::mutex m_conditionMutex;         //!< Condition variable "dummy" mutex
+    std::mutex m_sortMutex;              //!< Mutex for accessing sort queue
     
 public:
-    /** @brief Construct from URI */
-    BufferedSink(std::string uri, size_t queueSize, size_t timeout=2,
-		 size_t window=300);
+    /** 
+     * @brief Constructor
+     * @param uri Sink URI
+     * @param queueSize Size of the input queue
+     * @param useTs If true, use timestamp as event number (default=true)
+     * @param timeout Timeout seconds for pipeline for flushing data
+     * @param window Sliding window size for flushing data 
+     */
+    BufferedSink(std::string uri, size_t queueSize, bool useTs=false,
+		 size_t timeout=2, size_t window=300);
     /** @brief Destructor */
     ~BufferedSink();
 

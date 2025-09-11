@@ -2,7 +2,7 @@
     This software is Copyright by the Board of Trustees of Michigan
     State University (c) Copyright 2017.
 
-    You may use this software under the terms of the GNU public license
+    You may usethis software under the terms of the GNU public license
     (GPL).  The terms of this license are described at:
 
      http://www.gnu.org/licenses/gpl.txt
@@ -80,8 +80,9 @@ Receiver::Receiver(po::variables_map& vm) :
     //
 
     auto queueSize = vm["queue-size"].as<size_t>();
-    auto useTs = vm["useTs"].as<size_t>();
-    m_pSink = std::make_unique<BufferedSink>(makeSinkUri(), queueSize, useTs);
+    auto useTs = vm["useTs"].as<bool>();
+    auto sinkUri = makeSinkUri();
+    m_pSink = std::make_unique<BufferedSink>(sinkUri, queueSize, useTs);
 
     /////////////////////////////////////////////////////////////////////////
     // Read ini file and get flags
