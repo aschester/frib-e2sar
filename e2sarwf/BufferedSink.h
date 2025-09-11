@@ -16,7 +16,8 @@
 
 /**
  * @file BufferedSink.h
- * @brief Provides a class for managing a data sink with buffered output.
+ * @brief Provides a class for managing a data sink with some buffering to 
+ * ensure time-ordered data is in the processing pipeline.
  */
 
 #ifndef BUFFEREDSINK_H
@@ -27,7 +28,6 @@
 #include <deque>
 #include <memory>
 #include <mutex>
-#include <string>
 
 #include <boost/lockfree/queue.hpp>
 #include <boost/thread.hpp>
@@ -83,24 +83,45 @@ struct Buffer
 class BufferedSink
 {
 private:
-    size_t m_timeout; //!< Timeout seconds for outputting data
-    uint64_t m_window; //!< Sliding window for outputting data
-    uint64_t m_lastEmitted; //!< s_time value of last Buffer emitted
-    boost::lockfree::queue<Buffer*, boost::lockfree::fixed_sized<true>> m_inputQueue; //!< Queue pre-sorted data
-    std::deque<Buffer*> m_sortedQueue; //!< Queue events sorted by s_time    
-    std::unique_ptr<DataSink> m_pSink; //!< Our data sink
-    boost::thread m_outThread; //!< Thread for output    
+    size_t m_timeout;             //!< Timeout seconds for outputting data
+    uint64_t m_window;            //!< Sliding window for outputting data
+    uint64_t m_lastEmitted;       //!< s_time value of last Buffer emitted
+    size_t m_inputQueueCapacity;  //!< Fixed capacity of input queue
+    size_t m_inputFifo;           //!< Input queue FIFO for flush
     std::atomic<bool> m_shutdown; //!< Shutdown coordination
-    std::condition_variable m_dataReady; //!< Coordinate data ready for output
-    std::mutex m_mutex; //!< Condition variable "dummy" mutex
+
+    boost::lockfree::queue<Buffer*, boost::lockfree::fixed_sized<true>> m_inputQueue; //!< Queue pre-sorted input data buffers
+    std::deque<Buffer*> m_sortedQueue; //!< Buffer queue sorted by s_time
+    std::deque<std::unique_ptr<Buffer>> m_outputQueue; //!< Staged for output
+
+    std::unique_ptr<DataSink> m_pSink; //!< Our data sink (ringbuffer or file)
+
+    boost::thread m_sortThread;   //!< Move data to sort queue
+    boost::thread m_outputThread; //!< Moves data output and writes to the sink
+
+    std::condition_variable m_inputReady;  //!< Data is ready for sorting
+    std::condition_variable m_outputReady; //!< Data is ready for output
+
+    std::mutex m_inputMutex;  //!< Lock for input polling
+    std::mutex m_sortMutex;   //!< Lock for sort queue - coordinate access
+    std::mutex m_outputMutex; //!< Lock for output queue
     
 public:
-    /** @brief Construct from URI */
-    BufferedSink(std::string uri, size_t queueSize, size_t timeout=2,
-		 size_t window=300);
+    /** 
+     * @brief Construct from URI 
+     * @param uri Sink URI
+     * @param queueSize Size of the input queue
+     * @param useTs If true, use timestamp as event number (default=true)
+     * @param timeout Timeout seconds for pipeline for flushing data
+     * @param window Sliding window size for flushing data 
+     */
+    BufferedSink(std::string uri, size_t queueSize, bool useTs=false,
+		 size_t timeout=2, size_t window=300);
     /** @brief Destructor */
     ~BufferedSink();
 
+    /** @brief Stop threads and signal shutdown */
+    void stopThreads();
     /**
      * @brief Add data to the input queue
      * @param timestamp Event "timestamp," either nanosecond timestamp 
@@ -109,8 +130,6 @@ public:
      * @param nBytes Size of payload in bytes
      */
     void addData(uint64_t timestamp, void* pData, size_t nBytes);
-    /** @brief Stop threads and signal shutdown */
-    void stopThreads();
 
     /**
      * @brief Set the timeout for outputting data
@@ -132,6 +151,18 @@ public:
      * @return The sliding window length in units of Buffer s_time
      */
     size_t getWindow() { return m_window; };
+    /**
+     * @brief Set the input queue FIFO threshold value
+     * @param threshold FIFO depth (number of buffers)
+     * @note If the value of `depth` exceeds the maximum queue size, issue 
+     * a warning and don't reset the FIFO threshold
+     */
+    void setInputQueueFifo(size_t threshold);
+    /**
+     * @brief Get the input queue FIFO value
+     * @return Input queue FIFO value
+     */
+    size_t getInputQueueFifo() { return m_inputFifo; };
 
 private:
     /**
@@ -146,18 +177,28 @@ private:
      * @param pBuffer Pointer to the buffer we're trying to insert
      */
     void insertBuffer(Buffer* pBuffer);
-    /** @brief Poll status to output data when ready */
-    void poll();
-    /** @brief Drain the input queue and sort data into sorted queue */
+    /** 
+     * @brief Function run by the sort thread to move data from the input 
+     * to the sorted queue 
+     */
+    void pollInputQueue();
+    /** @brief Drain the input queue and move data into sorted queue */
     void drainInputQueue();
     /**
      * @brief Check if we have data to output due to the sliding window
      * @return True if so, false otherwise
      */
     bool readyEmitFromWindow();
-    /** @brief Write out the data ready for outputting */
+    /**
+     * @brief Function run by the output thread to move data from the sorted 
+     * queue to the output queue and write it to the sink
+     */
     void outputData();
-    
+    /** @brief Move data from sorted to output queue */
+    void prepareDataForOutput();
+    /** @brief Write data from the output queue into the sink */
+    void writeToSink();
+
     // Ring item utilities:
     
     /**

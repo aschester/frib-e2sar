@@ -71,7 +71,7 @@ private:
     size_t m_sendCount;      //!< Number of sent event buffers
     bool m_threadsRunning;   //!< True when send loop is active
     bool m_isDdas;           //!< Data is NSCLDAQ v12 DDAS
-    bool m_useCt;            //!< Use event count as event number
+    bool m_useTs;            //!< Use nanosecond timestamp as event number
     bool m_debug;            //!< Output debugging information
     bool m_verbose;          //!< Enable verbose output of configuration, etc.
     std::vector<std::string> m_senders; //!< List of sender IP addresses
@@ -79,7 +79,7 @@ private:
     std::unique_ptr<e2sar::Segmenter> m_pSegmenter; //!< E2SAR Segmenter
     std::unique_ptr<e2sar::LBManager> m_pLBManager; //!< E2SAR Load Balancer
     std::unique_ptr<DataSource> m_pSource; //!< Source of data to send
-    std::unique_ptr<BufferPool> m_pPool; //!< Managed pool for event buffers
+    std::unique_ptr<BufferPool> m_pPool;   //!< Managed pool for event buffers
 
     static Sender* m_pInstance; //!< Instance for handling signals
     

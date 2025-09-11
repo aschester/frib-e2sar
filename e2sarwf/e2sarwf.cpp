@@ -151,14 +151,14 @@ main(int argc, char* argv[])
 	 "host name for ringbuffer data sink [r]");
     opts("basepath", po::value<std::string>()->default_value(cwd),
 	 "base path for file data sink [r]");
-    opts("sinkname", po::value<std::string>()->default_value("reas"),
+    opts("sinkname,S", po::value<std::string>()->default_value("reas"),
 	 "name of data sink (without hostname or base path) [r]");
     opts("timeout", po::value<unsigned long>()->default_value(ULONG_MAX),
 	 "timeout seconds to read data from ringbuffer source [s]");
     opts("ddasraw", po::bool_switch()->default_value(false),
 	 "data is from NSCLDAQ v12 DDAS [s]");
-    opts("usect", po::bool_switch()->default_value(false),
-	 "use event counter as event number (else first timestamp) [s]");
+    opts("useTs", po::bool_switch()->default_value(false),
+	 "use nanosecond timestamp as event number (else event count) [s,r]");
     opts("verbose", po::value<bool>()->default_value(true),
 	 "enable verbose output [s,r]");    
     opts("debug", po::bool_switch()->default_value(false),

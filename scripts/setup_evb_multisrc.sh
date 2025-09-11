@@ -43,6 +43,7 @@ set options {
     {sink.arg    ""   "Ringbuffer sink for built data"}
     {glomdt.arg  1000 "Event build coincidence window in nanoseconds"}
     {window.arg  20   "Event orderer build window in seconds"}
+    {ddasraw.arg 0    "NSCLDAQ 12 DDAS raw data yes/no = 1/0"}
 }
 set mandatory [list source sink]
 
@@ -67,6 +68,7 @@ set srcname   [dict get $parsed source]
 set evbring   [dict get $parsed sink]
 set glomdt    [dict get $parsed glomdt]
 set window    [dict get $parsed window]
+set ddasraw   [dict get $parsed ddasraw]
 
 ##
 # @brief Configure and launch the ringFragmentSources input to the EVB pipe
@@ -88,17 +90,27 @@ proc launchRingSources {srcname} {
     set reas0 "[file join $daqbin ringFragmentSource]  \
     	--evbhost=localhost			       \
 	--evbport=$port 			       \
-	--ring=tcp://localhost/${srcname}_sort         \
+	--ring=tcp://localhost/${srcname}_0_sort       \
 	--ids=0					       \
-	--info=${srcname}_sort 		               \
-    	--expectbodyheaders"		       	       
+	--info=${srcname}_0			       \
+   	--expectbodyheaders"		       	       
 
+    set reas2 "[file join $daqbin ringFragmentSource]  \
+    	--evbhost=localhost			       \
+	--evbport=$port 			       \
+	--ring=tcp://localhost/${srcname}_2_sort       \
+	--ids=2				               \
+	--info=${srcname}_2			       \
+   	--expectbodyheaders"
+    
     ##
     # Start all clients:
     #
     
     set fd0 [open "| $reas0 |& cat" "r"]
     fconfigure $fd0 -blocking 0
+    set fd2 [open "| $reas2 |& cat" "r"]
+    fconfigure $fd2 -blocking 0
 }
 
 EVBC::initialize -gui off -destring $evbring -glombuild on -glomdt $glomdt
@@ -119,16 +131,16 @@ set Xoff     40000000
 set perQXon    500000
 set perQXoff  4000000
 
-#EVBC::configParams window $window
+EVBC::configParams window $window
 EVBC::configParams XonThreshold $Xon
 EVBC::configParams XoffThreshold $Xoff
 EVBC::configParams perQXonThreshold $perQXon
 EVBC::configParams perQXoffThreshold $perQXoff
-  
-#set output [Output::getInstance .output]
-#grid .output -sticky nsew
-#grid rowconfigure . {0} -weight 1
-#grid columnconfigure . {0} -weight 1
+   
+set output [Output::getInstance .output]
+grid .output -sticky nsew
+grid rowconfigure . {0} -weight 1
+grid columnconfigure . {0} -weight 1
 
 after [expr 1000]
 

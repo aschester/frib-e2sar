@@ -100,6 +100,9 @@ class NsclReassembler:
                     f"--port {self.args.port} -t {self.args.threads} "
                     f"--deq {self.args.deq} -d {self.args.duration} "
                     f"--sinkname {self.args.sinkname}")
+
+        if self.args.usect:
+            reas_cmd += f" --usect"
         
         sort_cmd = (f"{os.getenv('DAQBIN')}/ddasSort "
                     f"-s tcp://localhost/{self.args.sinkname} "
@@ -152,9 +155,9 @@ if __name__ == "__main__":
     parser.add_argument("-w", "--window",
                         help="accumulation window for DDAS sorter in seconds",
                         default=10)
-    parser.add_argument("--ddasraw",
+    parser.add_argument("--usect",
                         action="store_true",
-                        help="data source is NSCLDAQ 12 raw DDAS data")
+                        help="use event count as event timestamp")
     args = parser.parse_args()
 
     daqbin = os.getenv("DAQBIN")

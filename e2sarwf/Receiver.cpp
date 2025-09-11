@@ -80,7 +80,8 @@ Receiver::Receiver(po::variables_map& vm) :
     //
 
     auto queueSize = vm["queue-size"].as<size_t>();
-    m_pSink = std::make_unique<BufferedSink>(makeSinkUri(), queueSize);
+    auto useTs = (vm["useTs"].as<bool>());
+    m_pSink = std::make_unique<BufferedSink>(makeSinkUri(), queueSize, useTs);
 
     /////////////////////////////////////////////////////////////////////////
     // Read ini file and get flags
@@ -196,7 +197,7 @@ Receiver::shutdown()
 	t.join();	
     }
 
-    std::cout << "Stopping output thread..." << std::endl;
+    std::cout << "Stopping output threads..." << std::endl;
     m_pSink->stopThreads();
     
     boost::this_thread::sleep_for(duration);
