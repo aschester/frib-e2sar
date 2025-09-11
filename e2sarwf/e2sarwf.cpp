@@ -157,8 +157,8 @@ main(int argc, char* argv[])
 	 "timeout seconds to read data from ringbuffer source [s]");
     opts("ddasraw", po::bool_switch()->default_value(false),
 	 "data is from NSCLDAQ v12 DDAS [s]");
-    opts("usect", po::bool_switch()->default_value(false),
-	 "use event counter as event number (else first timestamp) [s]");
+    opts("useTs", po::bool_switch()->default_value(false),
+	 "use nanosecond timestamp as event number (else event count) [s]");
     opts("verbose", po::value<bool>()->default_value(true),
 	 "enable verbose output [s,r]");    
     opts("debug", po::bool_switch()->default_value(false),

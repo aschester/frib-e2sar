@@ -45,7 +45,8 @@ namespace ch = std::chrono;
  * Create the sink from the passed URI. It is up to the caller to ensure that 
  * the URI string is well formed. Starts output thread.
  */
-BufferedSink::BufferedSink(std::string uri, size_t queueSize, size_t timeout, size_t window) :
+BufferedSink::BufferedSink(std::string uri, size_t queueSize, bool useTs,
+			   size_t timeout, size_t window) :
     m_timeout(timeout),
     m_window(window*1e9),
     m_lastEmitted(0),
