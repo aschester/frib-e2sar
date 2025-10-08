@@ -45,15 +45,15 @@ namespace ch = std::chrono;
  * the URI string is well formed. Starts output thread.
  */
 BufferedSink::BufferedSink(std::string uri, size_t queueSize, bool useTs,
-			   size_t timeout, size_t window) :
-    m_timeout(timeout),
+			   size_t timeoutMs, size_t window) :
+    m_timeoutMs(timeoutMs),
     m_window(window),
     m_lastEmitted(0),
     m_inputQueue(queueSize),
-    m_shutdown(false)    
+    m_shutdown(false)
 {
     if (useTs) {
-	window *= 1e9;
+	m_window *= 1e9;
     }
     std::cerr << "Window size: " << m_window
 	      << (useTs ? " nanoseconds" : " events")
@@ -190,20 +190,19 @@ BufferedSink::poll()
 	drainInputQueue();
 
 	// We are ready to output data if one of two things are true:
-	// 1. We have hit a timeout limit
-	// 2. The time difference between the first and last item in the
+	// 1. The time difference between the first and last item in the
 	//    queue exceeds the emission window
+	// 2. We have hit a timeout limit
 	    
 	auto now = ch::high_resolution_clock::now();
-	bool timeout = (now - lastOutputTime) > ch::seconds(m_timeout);
-	bool ready = (timeout && !m_sortedQueue.empty()); // 1. timeout
-	ready |= readyEmitFromWindow();                   // 2. window
-
+	bool timeout = (now - lastOutputTime) > ch::milliseconds(m_timeoutMs);
+	bool ready = emitFromWindow() || timeout;
+	
 	// If we're ready to output data, do so, else sleep and wait:
 	    
 	if (ready) {
 	    outputData();
-	    lastOutputTime = now;
+	    lastOutputTime = ch::high_resolution_clock::now();
 	} else {
 	    std::unique_lock<std::mutex> lock(m_conditionMutex);
 	    m_dataReady.wait_for(lock, ch::milliseconds(100));
@@ -243,7 +242,7 @@ BufferedSink::drainInputQueue()
  * concurrent access invalidates checks on the queue times.
  */
 bool
-BufferedSink::readyEmitFromWindow()
+BufferedSink::emitFromWindow()
 {
     std::unique_lock<std::mutex> lock(m_sortMutex);
 
@@ -274,8 +273,8 @@ BufferedSink::outputData()
 	// Nothing to output, this should be impossible if we've gotten here:
     
 	if (m_sortedQueue.empty()) {
-	    std::cerr << "**WARNING** Trying to output data but the "
-		      << "sorted queue is empty " << std::endl;
+	    // std::cerr << "**WARNING** Trying to output data but the "
+	    // 	      << "sorted queue is empty " << std::endl;
 	    return;
 	}
 
@@ -293,7 +292,7 @@ BufferedSink::outputData()
     
     // Consolidate all buffers into a single iovec and make a "single" write
     // call, relying on the underlying writes to bust up the iovec into
-    // appropriate chunks if its too large:
+    // appropriate chunks if its too large and the sink is a file:
 
     std::vector<iovec> iovs;
     iovs.reserve(itemsToOutput);

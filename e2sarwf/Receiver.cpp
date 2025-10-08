@@ -162,8 +162,7 @@ Receiver::ctrlCHandler(int sig)
     if (m_pInstance) {
 	m_pInstance->shutdown();
     }
-    std::signal(sig, SIG_DFL);
-    raise(sig);
+    std::exit(0);
 }
 
 /****************************************************************************

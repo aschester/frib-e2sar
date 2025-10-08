@@ -80,18 +80,27 @@ struct Buffer
  * @note If the input queue size exceeds its initial capacity, it may be 
  * resized. There is no guarantee this resize operation is lock-free.
  *
- * @note (ASC 9/11/25): Single thread performs the sorting and outputting of 
+ * @note (ASC 9/11/25): A single thread performs the sorting and outputting of 
  * data, which is "good enough" for simple workflows. A more complex threaded 
  * design may be desireable to separate the operation of moving data from the 
  * input to the sorted queue from the actual I/O but for current applicaions 
  * the performance is OK without it. Note that the condition varible and sort 
  * queue are protected by different mutexes, anticipating this change.
+ *
+ * @note (ASC 9/18/25): NSCLDAQ swtrigger CRingBufferTransportEJFAT class has 
+ * a read timeout to ensure that all the data is processed through the 
+ * EventEditor workers properly. This means this class needs a timeout window 
+ * shorter than the timeout in CRingBufferTransportEJFAT or enough data 
+ * through the pipleline such that the output is triggered by the window limit 
+ * prior to the read timing out. Generally this is an issue at the start of a 
+ * run or if the chunk size fanned out to each worker is fairly large (>10k) 
+ * as this introduces longer processing delays.
  */
 
 class BufferedSink
 {
 private:
-    size_t m_timeout;             //!< Timeout seconds for outputting data
+    size_t m_timeoutMs;           //!< Timeout seconds for outputting data
     uint64_t m_window;            //!< Sliding window for outputting data
     uint64_t m_lastEmitted;       //!< s_time value of last Buffer emitted
     std::atomic<bool> m_shutdown; //!< Shutdown coordination
@@ -113,11 +122,11 @@ public:
      * @param uri Sink URI
      * @param queueSize Size of the input queue
      * @param useTs If true, use timestamp as event number (default=true)
-     * @param timeout Timeout seconds for pipeline for flushing data
+     * @param timeoutMs Timeout milliseconds for pipeline for flushing data
      * @param window Sliding window size for flushing data 
      */
     BufferedSink(std::string uri, size_t queueSize, bool useTs=false,
-		 size_t timeout=2, size_t window=300);
+		 size_t timeoutMs=1000, size_t window=300);
     /** @brief Destructor */
     ~BufferedSink();
 
@@ -134,14 +143,14 @@ public:
 
     /**
      * @brief Set the timeout for outputting data
-     * @param timeout The timeout length in seconds for outputting data
+     * @param timeoutMs The timeout length in milliseconds for outputting data
      */
-    void setTimeout(size_t timeout) { m_timeout = timeout; };
+    void setTimeout(size_t timeoutMs) { m_timeoutMs = timeoutMs; };
     /**
      * @brief Get the timeout value for outputting data
-     * @return The timeout value in seconds
+     * @return The millisecond timeout value
      */
-    size_t getTimeout() { return m_timeout; };
+    size_t getTimeout() { return m_timeoutMs; };
     /**
      * @brief Set the sliding window length for determining when to output
      * @param timeout The timeout length in units of Buffer s_time
@@ -174,7 +183,7 @@ private:
      * @brief Check if we have data to output due to the sliding window
      * @return True if so, false otherwise
      */
-    bool readyEmitFromWindow();
+    bool emitFromWindow();
     /** @brief Write out the data ready for outputting */
     void outputData();
     
