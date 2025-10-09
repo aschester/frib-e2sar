@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+
+'''@file run_evb_and_log.py
+ @details 
+Build raw NSCLDAQ data into events and write it to disk (type independent)
+'''
+
+import os
+from workflows import EvbAndLog
+
+if __name__ == "__main__":
+    '''@brief Main function - create the app and run it'''
+    if os.getenv("DAQBIN") is None:
+        print("[main] NSCLDAQ 12 environment is required")
+        sys.exit(1)
+
+    try:
+        workflow = EvbAndLog()
+        workflow.run()
+    except KeyboardInterrupt:
+        print("[main] Process interrupted, exiting")
+    except Exception as e:
+        print(f"[main] Unexpected {type(e).__name__}: {e}")

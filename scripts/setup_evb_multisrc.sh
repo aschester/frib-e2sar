@@ -19,7 +19,8 @@
 
 ##
 # @todo (ASC 5/21/25):
-# - Improved control over configuration options i.e., set source I
+# - Improved control over configuration options i.e., set source Id
+#
  
 lappend auto_path [file join $::env(DAQROOT) TclLibs]
 
@@ -79,75 +80,68 @@ set ddasraw   [dict get $parsed ddasraw]
 proc launchRingSources {srcname} {
     set daqbin $::env(DAQBIN)
 
+    set port [EVBC::getOrdererPort]
+    puts "Orderer listening on $port"
+    
     ##
     # Add additional clients here:
     #
     
     set reas0 "[file join $daqbin ringFragmentSource]  \
     	--evbhost=localhost			       \
-	--evbname myEvb				       \
-	--ring=tcp://localhost/${srcname}_sort	       \
+	--evbport=$port 			       \
+	--ring=tcp://localhost/${srcname}_0_sort       \
 	--ids=0					       \
-	--info=${srcname}_sort 			       \
-    	--expectbodyheaders"		       	       
+	--info=${srcname}_0			       \
+   	--expectbodyheaders"		       	       
+
+    set reas2 "[file join $daqbin ringFragmentSource]  \
+    	--evbhost=localhost			       \
+	--evbport=$port 			       \
+	--ring=tcp://localhost/${srcname}_2_sort       \
+	--ids=2				               \
+	--info=${srcname}_2			       \
+   	--expectbodyheaders"
     
     ##
     # Start all clients:
     #
     
-    set fd [open "| $reas0 |& cat" "r"]
-    fconfigure $fd -blocking 0
+    set fd0 [open "| $reas0 |& cat" "r"]
+    fconfigure $fd0 -blocking 0
+    set fd2 [open "| $reas2 |& cat" "r"]
+    fconfigure $fd2 -blocking 0
 }
 
-set daqbin $::env(DAQBIN)
-set orderer [file join $daqbin startOrderer]
-set program [file join $daqbin Orderer]
+EVBC::initialize -gui off -destring $evbring -glombuild on -glomdt $glomdt
 
-###########################################################################
-# Normal Orderer/glom pipe                                                #
-###########################################################################
+EVBC::onBegin
 
-set pipecommand "$program 2> orderer.err"
-set glom "[file join $daqbin glom] --dt=$glomdt --timestamp-policy=latest"
-append pipecommand " | $glom"
-set stdintoring "[file join $daqbin stdintoring] $evbring"
-append pipecommand " | $stdintoring |& cat"
+####################
+# Defaults:        #
+#------------------#
+# Xon      3000000 #
+# Xoff     4000000 #
+# perQXon    50000 #
+# perQXoff  400000 #
+####################
 
-set pipefd [open "| $pipecommand" w+]
+set Xon      30000000
+set Xoff     40000000
+set perQXon    500000
+set perQXoff  4000000
 
-###########################################################################
-# No glom pipe                                                            #
-# Run in tmp shell script because I can't figure out how to handle        #
-# "can't read output from command: standard output was redirected" error  #
-###########################################################################
-
-#set shellscript "/tmp/run_orderer.sh"
-#set fp [open $shellscript "w"]
-#puts $fp "#!/bin/sh"
-#puts $fp "$program > /dev/null"
-#close $fp
-#file attributes $shellscript -permissions 0755
-
-#set pipefd [open "| $shellscript" w+]
-
-##
-# Setup
-#
-
-fconfigure $pipefd -buffering line -blocking 0
-
-puts $pipefd "source $orderer"
-flush $pipefd
-puts $pipefd "set ::OutputRing $evbring"
-flush $pipefd
-puts $pipefd "start myEvb"
-flush $pipefd
+EVBC::configParams window $window
+EVBC::configParams XonThreshold $Xon
+EVBC::configParams XoffThreshold $Xoff
+EVBC::configParams perQXonThreshold $perQXon
+EVBC::configParams perQXoffThreshold $perQXoff
    
 set output [Output::getInstance .output]
 grid .output -sticky nsew
 grid rowconfigure . {0} -weight 1
 grid columnconfigure . {0} -weight 1
 
-after [expr 2000]
+after [expr 1000]
 
 launchRingSources $srcname

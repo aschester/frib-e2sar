@@ -43,7 +43,6 @@ set options {
     {sink.arg    ""   "Ringbuffer sink for built data"}
     {glomdt.arg  1000 "Event build coincidence window in nanoseconds"}
     {window.arg  20   "Event orderer build window in seconds"}
-    {ddasraw.arg 0    "NSCLDAQ 12 DDAS raw data yes/no = 1/0"}
 }
 set mandatory [list source sink]
 
@@ -68,7 +67,6 @@ set srcname   [dict get $parsed source]
 set evbring   [dict get $parsed sink]
 set glomdt    [dict get $parsed glomdt]
 set window    [dict get $parsed window]
-set ddasraw   [dict get $parsed ddasraw]
 
 ##
 # @brief Configure and launch the ringFragmentSources input to the EVB pipe
@@ -90,42 +88,43 @@ proc launchRingSources {srcname} {
     set reas0 "[file join $daqbin ringFragmentSource]  \
     	--evbhost=localhost			       \
 	--evbport=$port 			       \
-	--ring=tcp://localhost/${srcname}_sort	       \
+	--ring=tcp://localhost/${srcname}_sort         \
 	--ids=0					       \
-	--info=${srcname}_sort 			       \
+	--info=${srcname}_sort 		               \
     	--expectbodyheaders"		       	       
-    
+
     ##
     # Start all clients:
     #
     
-    set fd [open "| $reas0 |& cat" "r"]
-    fconfigure $fd -blocking 0
+    set fd0 [open "| $reas0 |& cat" "r"]
+    fconfigure $fd0 -blocking 0
 }
-
-#############
-# Defaults: #
-#############
-# Xon      3000000
-# Xoff     4000000
-# perQXon    50000
-# perQXoff  400000
-
-#set Xon      30000000
-#set Xoff     40000000
-#set perQXon    500000
-#set perQXoff  4000000
-
-#EVBC::configParams window $window
-#EVBC::configParams XonThreshold $Xon
-#EVBC::configParams XoffThreshold $Xoff
-#EVBC::configParams perQXonThreshold $perQXon
-#EVBC::configParams perQXoffThreshold $perQXoff
 
 EVBC::initialize -gui off -destring $evbring -glombuild on -glomdt $glomdt
 
 EVBC::onBegin
-   
+
+####################
+# Defaults:        #
+#------------------#
+# Xon      3000000 #
+# Xoff     4000000 #
+# perQXon    50000 #
+# perQXoff  400000 #
+####################
+
+set Xon      30000000
+set Xoff     40000000
+set perQXon    500000
+set perQXoff  4000000
+
+EVBC::configParams window $window
+EVBC::configParams XonThreshold $Xon
+EVBC::configParams XoffThreshold $Xoff
+EVBC::configParams perQXonThreshold $perQXon
+EVBC::configParams perQXoffThreshold $perQXoff
+  
 set output [Output::getInstance .output]
 grid .output -sticky nsew
 grid rowconfigure . {0} -weight 1
