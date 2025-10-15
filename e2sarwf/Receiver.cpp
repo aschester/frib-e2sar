@@ -83,6 +83,16 @@ Receiver::Receiver(po::variables_map& vm) :
     auto useTs = vm["useTs"].as<bool>();
     auto sinkUri = makeSinkUri();
     m_pSink = std::make_unique<BufferedSink>(sinkUri, queueSize, useTs);
+    if (vm.count("sink-timeout")) {
+	m_pSink->setTimeout(vm["sink-timeout"].as<size_t>());
+	std::cerr << "Using sink timeout: " << m_pSink->getTimeout()
+		  << " ms" << std::endl;
+    }
+    if (vm.count("sink-window")) {
+	m_pSink->setWindow(vm["sink-window"].as<size_t>());
+	std::cerr << "Using sink window: " << m_pSink->getWindow()
+		  << " buffers" << std::endl;
+    }
 
     /////////////////////////////////////////////////////////////////////////
     // Read ini file and get flags
@@ -116,8 +126,9 @@ Receiver::Receiver(po::variables_map& vm) :
     auto deqThreads = vm["deq"].as<size_t>();     // Dequeue/read
 
     ip::address ip = ip::make_address(ip_s);    
-    m_pReassembler
-	= std::make_unique<Reassembler>(ejfatUri, ip, port, numThreads, flags);
+    m_pReassembler = std::make_unique<Reassembler>(
+	ejfatUri, ip, port, numThreads, flags
+	);
     
     if (m_verbose) {
 	std::cout << "----- Receiver configuration -----" << std::endl;

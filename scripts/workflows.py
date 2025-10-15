@@ -47,14 +47,7 @@ def get_default_reas_parser(prog_name, prog_info) -> argparse.ArgumentParser:
     parser.add_argument(
         "--ip",
         help="IP addr the Reassembler process",
-        default="35.11.82.130"
-    )
-    parser.add_argument(
-        "-u", "--uri",
-        help="override EJFAT_URI envvar to set the URI, empty string '' "
-        "will default to reading the URI from the envvar",
-        default=""
-    )
+        default="35.11.82.130")
     parser.add_argument(
         "--port",
         help="Starting port number the Reassembler listens on",
@@ -256,8 +249,7 @@ class ReassembleAndSort(WorkflowBase):
         reas_cmd = (
             f"{e2sarwf} --recv "        
             f"--ini {self.args.ini} "      
-            f"--ip {self.args.ip} "
-            f"--uri {self.args.uri} "
+            f"--ip {self.args.ip} "     
             f"--port {self.args.port} " 
             f"--threads {self.args.threads} "  
             f"--deq {self.args.deq} "   
@@ -382,7 +374,6 @@ class ReassembleAndLog(WorkflowBase):
             f"{e2sarwf} --recv "
             f"--ini {self.args.ini} "
             f"--ip {self.args.ip} "
-            f"--uri {self.args.uri} "
             f"--port {self.args.port} "
             f"--threads {self.args.threads} "
             f"--deq {self.args.deq} "
@@ -525,7 +516,6 @@ class ReassembleAndFit(WorkflowBase):
             f"{e2sarwf} --recv "
             f"--ini {self.args.ini} "
             f"--ip {self.args.ip} "
-            f"--uri {self.args.uri} "
             f"--port {self.args.port} "
             f"--threads {self.args.threads} "
             f"--deq {self.args.deq} "

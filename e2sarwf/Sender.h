@@ -79,7 +79,7 @@ private:
     std::unique_ptr<e2sar::Segmenter> m_pSegmenter; //!< E2SAR Segmenter
     std::unique_ptr<e2sar::LBManager> m_pLBManager; //!< E2SAR Load Balancer
     std::unique_ptr<DataSource> m_pSource; //!< Source of data to send
-    std::unique_ptr<BufferPool> m_pPool; //!< Managed pool for event buffers
+    std::unique_ptr<BufferPool> m_pPool;   //!< Managed pool for event buffers
 
     static Sender* m_pInstance; //!< Instance for handling signals
     

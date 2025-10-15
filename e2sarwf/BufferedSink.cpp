@@ -55,9 +55,6 @@ BufferedSink::BufferedSink(std::string uri, size_t queueSize, bool useTs,
     if (useTs) {
 	m_window *= 1e9;
     }
-    std::cerr << "Window size: " << m_window
-	      << (useTs ? " nanoseconds" : " events")
-	      << std::endl;
     
     m_pSink = std::unique_ptr<DataSink>(makeDataSink(uri));
     m_outThread = boost::thread(&BufferedSink::poll, this);

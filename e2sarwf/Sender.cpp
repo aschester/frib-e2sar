@@ -76,7 +76,7 @@ Sender* Sender::m_pInstance = nullptr;
  */
 Sender::Sender(po::variables_map& vm) :
     m_rateGbps(vm["rate"].as<float>()),
-    m_timeout(vm["timeout"].as<unsigned long>()),
+    m_timeout(vm["read-timeout"].as<unsigned long>()),
     m_dataId(vm["dataid"].as<u_int16_t>()),
     m_nEvents(vm["num"].as<size_t>()),
     m_evtBufSize(vm["bufsize"].as<size_t>()),
@@ -482,9 +482,9 @@ Sender::sendBuffer(u_int8_t* pData, size_t bytes)
     } else {
 	evtNum = m_sendCount;
     }
-    auto rvseg = m_pSegmenter->addToSendQueue(pData, bytes, evtNum,
-					      m_dataId, /*entropy=*/0,
-					      &senderCallback, pData);
+    auto rvseg = m_pSegmenter->addToSendQueue(
+	pData, bytes, evtNum, m_dataId, /*entropy=*/0, &senderCallback, pData
+	);
     if (rvseg.has_error()) {
 	std::cerr << "Failed to add to send queue: "
 		  << rvseg.error().message()

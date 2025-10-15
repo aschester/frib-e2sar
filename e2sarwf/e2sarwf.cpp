@@ -98,70 +98,106 @@ main(int argc, char* argv[])
     opts("send", "send traffic");
     opts("recv", "receive traffic");
 
-    opts("bufsize,b", po::value<size_t>()->default_value(1024*1024),
+    opts("bufsize,b",
+	 po::value<size_t>()->default_value(1024*1024),
 	 "event buffer size in bytes [s]");
-    opts("uri,u", po::value<std::string>()->default_value(""),
-	 "specify EJFAT_URI on the command-line instead of the envvar");
-    opts("num,n", po::value<size_t>()->default_value(0),
+    opts("uri,u",
+	 po::value<std::string>()->default_value(""),
+	 "specify EJFAT_URI on the command-line instead of the envvar [s,r]");
+    opts("num,n",
+	 po::value<size_t>()->default_value(0),
 	 "number of event buffers to send (0 send all data) [s]");
-    opts("srcid", po::value<u_int32_t>()->default_value(0),
+    opts("srcid",
+	 po::value<u_int32_t>()->default_value(0),
 	 "event source ID [s]");
-    opts("dataid", po::value<u_int16_t>()->default_value(0),
+    opts("dataid",
+	 po::value<u_int16_t>()->default_value(0),
 	 "data ID [s]");
-    opts("threads,t", po::value<size_t>()->default_value(1),
+    opts("threads,t",
+	 po::value<size_t>()->default_value(1),
 	 "number of receive threads [r]");
-    opts("rate,r", po::value<float>()->default_value(1.0),
+    opts("rate,r",
+	 po::value<float>()->default_value(1.0),
 	 "send rate in Gbps [s]");
-    opts("period,p", po::value<u_int16_t>()->default_value(1000),
+    opts("period,p",
+	 po::value<u_int16_t>()->default_value(1000),
 	 "receive side reporting thread sleep period in ms [r]");
-    opts("duration,d", po::value<int>()->default_value(0),
+    opts("duration,d",
+	 po::value<int>()->default_value(0),
 	 "receiver run duration in seconds (defaults to 0 - until "
 	 "Ctrl-C is pressed) [r]");
-    opts("ini,i", po::value<std::string>(),
+    opts("ini,i",
+	 po::value<std::string>(),
 	 "file to initialize SegmenterFlags [s] or ReassemblerFlags [r]. "
 	 "Defaults to segmenter_config.ini [s] or reassembler_config.ini [r] "
 	 "in current working directory if not provided.");
-    opts("ip", po::value<std::string>()->default_value("35.11.82.130"),
+    opts("ip",
+	 po::value<std::string>()->default_value("35.11.82.130"),
 	 "IP address (IPv4 or IPv6) from which sender sends from or on which "
 	 "receiver listens (conflicts with --autoip) [s,r]");
-    opts("port,p", po::value<u_int16_t>()->default_value(20000),
+    opts("port,p",
+	 po::value<u_int16_t>()->default_value(20000),
 	 "starting UDP port number on which receiver listens. [r] ");
-    opts("deq", po::value<size_t>()->default_value(1),
+    opts("deq",
+	 po::value<size_t>()->default_value(1),
 	 "number of event dequeue threads in receiver [r]");
-    opts("cores,c", po::value<std::vector<int>>()->multitoken(),
+    opts("cores,c",
+	 po::value<std::vector<int>>()->multitoken(),
 	 "optional list of cores to bind sender or receiver threads to; "
 	 "number of receiver threads is equal to the number of cores [s,r]");
-    opts("optimize,o", po::value<std::vector<std::string>>()->multitoken(),
+    opts("optimize,o",
+	 po::value<std::vector<std::string>>()->multitoken(),
 	 "a list of optimizations to turn on [s]");
-    opts("mtu,m", po::value<u_int16_t>(),
+    opts("mtu,m",
+	 po::value<u_int16_t>(),
 	 "MTU size in bytes) [s]");
 
     // Additions to base options:
     
     std::string cwd = std::filesystem::current_path();
-    opts("nscldaq-version,v", po::value<int>()->default_value(12),
+    
+    opts("nscldaq-version,v",
+	 po::value<int>()->default_value(12),
 	 "NSCLDAQ data format major version number [s,r]");
-    opts("source,s", po::value<std::string>()->default_value(""),
+    opts("source,s",
+	 po::value<std::string>()->default_value(""),
 	 "URI data source we're reading from [s]");
-    opts("queue-size,q", po::value<size_t>()->default_value(10240),
+    opts("queue-size,q",
+	 po::value<size_t>()->default_value(10240),
 	 "queue size for recycling send buffers [s,r]");
-    opts("proto", po::value<std::string>()->default_value("ring"),
+    opts("proto",
+	 po::value<std::string>()->default_value("ring"),
 	 "data sink URI protocol (file or ring) [r]");
-    opts("hostname", po::value<std::string>()->default_value("localhost"),
+    opts("hostname",
+	 po::value<std::string>()->default_value("localhost"),
 	 "host name for ringbuffer data sink [r]");
-    opts("basepath", po::value<std::string>()->default_value(cwd),
+    opts("basepath",
+	 po::value<std::string>()->default_value(cwd),
 	 "base path for file data sink [r]");
-    opts("sinkname", po::value<std::string>()->default_value("reas"),
+    opts("sinkname",
+	 po::value<std::string>()->default_value("reas"),
 	 "name of data sink (without hostname or base path) [r]");
-    opts("timeout", po::value<unsigned long>()->default_value(ULONG_MAX),
+    opts("read-timeout",
+	 po::value<unsigned long>()->default_value(ULONG_MAX),
 	 "timeout seconds to read data from ringbuffer source [s]");
-    opts("ddasraw", po::bool_switch()->default_value(false),
+    opts("sink-timeout",
+	 po::value<size_t>(),
+	 "hold time in milliseconds for buffering data before outputting "
+	 "to sink [r]");
+    opts("sink-window",
+	 po::value<size_t>(),
+	 "maximum buffer depth of data prior to outputting to sink [r]");
+    opts("ddasraw",
+	 po::bool_switch()->default_value(false),
 	 "data is from NSCLDAQ v12 DDAS [s]");
-    opts("useTs", po::bool_switch()->default_value(false),
+    opts("useTs",
+	 po::bool_switch()->default_value(false),
 	 "use nanosecond timestamp as event number (else event count) [s]");
-    opts("verbose", po::value<bool>()->default_value(true),
+    opts("verbose",
+	 po::value<bool>()->default_value(true),
 	 "enable verbose output [s,r]");    
-    opts("debug", po::bool_switch()->default_value(false),
+    opts("debug",
+	 po::bool_switch()->default_value(false),
 	 "enable debugging output [s,r]");
     
     po::variables_map vm;
@@ -179,22 +215,41 @@ main(int argc, char* argv[])
         conflicting_options(vm, "send", "recv");
         conflicting_options(vm, "send", "threads");
         conflicting_options(vm, "send", "period");
+	conflicting_options(vm, "send", "duration");
+        conflicting_options(vm, "send", "deq");
 	conflicting_options(vm, "send", "port");
+	conflicting_options(vm, "send", "proto");
+	conflicting_options(vm, "send", "hostname");
+	conflicting_options(vm, "send", "basepath");
+	conflicting_options(vm, "send", "sinkname");
+	conflicting_options(vm, "send", "sink-timeout");
+	conflicting_options(vm, "send", "sink-window");
+	
+	option_dependency(vm, "send", "ip");
+	option_dependency(vm, "send", "source");
+	option_dependency(vm, "send", "rate");
+	
 	conflicting_options(vm, "recv", "num");
-        conflicting_options(vm, "recv", "enum");
-        conflicting_options(vm, "recv", "length");
         conflicting_options(vm, "recv", "src");
         conflicting_options(vm, "recv", "dataid");
         conflicting_options(vm, "recv", "rate");
 	conflicting_options(vm, "recv", "source");
 	conflicting_options(vm, "recv", "mtu");
-	option_dependency(vm, "send", "ip");
+	conflicting_options(vm, "recv", "bufsize");
+	conflicting_options(vm, "recv", "optimize");
+	conflicting_options(vm, "recv", "read-timeout");
+	conflicting_options(vm, "recv", "ddasraw");
+	conflicting_options(vm, "recv", "useTs");
+	
 	option_dependency(vm, "recv", "ip");
         option_dependency(vm, "recv", "port");
 	option_dependency(vm, "recv", "proto");
+	option_dependency(vm, "recv", "hostname");
+	option_dependency(vm, "recv", "basepath");
+	option_dependency(vm, "recv", "sinkname");
+	
 	// Non-mandatory program options:
-        conflicting_options(vm, "send", "duration");
-        conflicting_options(vm, "deq", "send");
+	
         conflicting_options(vm, "cores", "threads");
     }
     catch (const std::logic_error &e) {
