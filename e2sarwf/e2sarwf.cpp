@@ -76,7 +76,7 @@ void option_dependency(const po::variables_map &vm,
 
 /**
  * @brief Run the application - either in `send` or `recv` mode.
- * @param argc Command-line arguemnt count  
+ * @param argc Command-line argument count  
  * @param argv Argument vector
  * @return int
  * @retval EXIT_SUCCESS Success
@@ -103,7 +103,7 @@ main(int argc, char* argv[])
 	 "event buffer size in bytes [s]");
     opts("uri,u",
 	 po::value<std::string>()->default_value(""),
-	 "specify EJFAT_URI on the command-line instead of the envvar [s,r]");
+	 "specify EJFAT_URI on the command line instead of the envvar [s,r]");
     opts("num,n",
 	 po::value<size_t>()->default_value(0),
 	 "number of event buffers to send (0 send all data) [s]");

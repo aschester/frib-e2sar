@@ -53,11 +53,8 @@ export TEMPLATE_CONFIGFILE=$PWD/template.txt
 echo Using fit configfile $FIT_CONFIGFILE
 echo Using template configfile $TEMPLATE_CONFIGFILE
 
-input=file:///scratch/e2sar/data/e23055/run-1009.evt
-output=file:///scratch/e2sar/data/e23055/fitted/run-1009-fitted.evt
-
-#input=tcp://localhost/reas
-#output=tcp://localhost/fitted
+input=tcp://localhost/reas
+output=tcp://localhost/fitted
 
 if [ "$3" == "mpi" ]; then
     workers=`expr $1 - 3` # 3 reserved for fan out, fan in, sort

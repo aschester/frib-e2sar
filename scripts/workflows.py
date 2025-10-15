@@ -47,7 +47,8 @@ def get_default_reas_parser(prog_name, prog_info) -> argparse.ArgumentParser:
     parser.add_argument(
         "--ip",
         help="IP addr the Reassembler process",
-        default="35.11.82.130")
+        default="35.11.82.130"
+    )
     parser.add_argument(
         "--port",
         help="Starting port number the Reassembler listens on",
@@ -72,6 +73,11 @@ def get_default_reas_parser(prog_name, prog_info) -> argparse.ArgumentParser:
         "-d", "--duration",
         help="run duration in seconds to keep Reassembler open",
         default=0
+    )
+    parser.add_argument(
+        "-u", "--uri",
+        help="specify EJFAT_URI on the command line instead of envvar",
+        default=None
     )
     parser.add_argument(
         "--useTs",
@@ -259,6 +265,8 @@ class ReassembleAndSort(WorkflowBase):
 
         if self.args.useTs:
             reas_cmd += f" --useTs"
+        if self.args.uri is not None:
+            reas_cmd += f" --uri {self.args.uri}"
             
         sort_cmd = (
             f"{os.getenv('DAQBIN')}/ddasSort "
@@ -383,6 +391,8 @@ class ReassembleAndLog(WorkflowBase):
 
         if self.args.useTs:
             reas_cmd += f"--useTs"
+        if self.args.uri is not None:
+            reas_cmd += f" --uri {self.args.uri}"
         
         log_cmd = (
             f"{os.getenv('DAQBIN')}/eventlog "   
@@ -409,10 +419,6 @@ class ReassembleAndFit(WorkflowBase):
       reas_event (threading.Event): Sychroniziation primitive for Reassembler
       fit_proc (Popen object): Trace fitting process (really a bash script)
       fit_event (threading.Event): Sychroniziation primitive for fit script
-      workers (int): Number of workers for EventEditor parallel processing 
-        (default=32)
-      chunk_size (int): Chunk size for EventEditor parallel processing
-        (default=1000)
 
     Methods:
       __init__(int, int): Constructor
@@ -423,7 +429,7 @@ class ReassembleAndFit(WorkflowBase):
         keyboard interrupt signal (handled by main)
 
     '''
-    def __init__(self, workers: int=32, chunk_size: int=1000) -> None:
+    def __init__(self) -> None:
         '''@brief Constructor
         @param workers Number of workers for parallel trace fitting
         @param chunk_size Size of chunks (in events) handed to each worker
@@ -433,13 +439,26 @@ class ReassembleAndFit(WorkflowBase):
             "ReassembleAndFit",
             "Reassemble and fit DDAS data with waveforms"
         )
+        self.parser.add_argument(
+            "-w", "--workers",
+            help="number of EventEditor workers used to fit trace data",
+            default=32
+        )
+        self.parser.add_argument(
+            "-c", "--chunk-size",
+            help="work unit size (# of events) handed to EventEditor workers",
+            default=1000
+        )
+        self.parser.add_argument(
+            "-p", "--parallel-strategy",
+            help="parallel strategy for EventEditor ('threaded' or 'mpi')",
+            default="mpi"
+        )
         self.args = self.parser.parse_args()
         self.reas_proc = None
         self.reas_event = th.Event()
         self.fit_proc = None
         self.fit_event = th.Event()
-        self.workers = workers
-        self.chunk_size = chunk_size
 
     def run(self) -> None:
         '''@brief Run the workflow'''
@@ -525,8 +544,15 @@ class ReassembleAndFit(WorkflowBase):
 
         if self.args.useTs:
             reas_cmd += f"--useTs"
+        if self.args.uri is not None:
+            reas_cmd += f" --uri {self.args.uri}"
             
-        fit_cmd = (f"./runee.sh 32 1000 mpi")
+        fit_cmd = (
+            f"./run_ee.sh "
+            f"{self.args.workers} "
+            f"{self.args.chunk_size} "
+            f"{self.args.parallel_strategy}"
+        )
 
         return reas_cmd, fit_cmd
 
