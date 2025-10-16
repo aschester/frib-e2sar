@@ -73,7 +73,6 @@ private:
     bool m_isDdas;           //!< Data is NSCLDAQ v12 DDAS
     bool m_useTs;            //!< Use nanosecond timestamp as event number
     bool m_debug;            //!< Output debugging information
-    bool m_verbose;          //!< Enable verbose output of configuration, etc.
     std::vector<std::string> m_senders; //!< List of sender IP addresses
     
     std::unique_ptr<e2sar::Segmenter> m_pSegmenter; //!< E2SAR Segmenter

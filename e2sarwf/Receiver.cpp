@@ -60,8 +60,7 @@ Receiver::Receiver(po::variables_map& vm) :
     m_duration(vm["duration"].as<int>()),
     m_numThreads(vm["deq"].as<size_t>()),
     m_threadsRunning(false),
-    m_debug(vm["debug"].as<bool>()),
-    m_verbose(vm["verbose"].as<bool>())
+    m_debug(vm["debug"].as<bool>())
 {
     /////////////////////////////////////////////////////////////////////////
     // Set instance and register signal handler
@@ -79,19 +78,28 @@ Receiver::Receiver(po::variables_map& vm) :
     // Configure data sink
     //
 
-    auto queueSize = vm["queue-size"].as<size_t>();
-    auto useTs = vm["useTs"].as<bool>();
     auto sinkUri = makeSinkUri();
+    auto queueSize = vm["queue-size"].as<size_t>();    
+    auto useTs = vm["useTs"].as<bool>();
+
     m_pSink = std::make_unique<BufferedSink>(sinkUri, queueSize, useTs);
+    
     if (vm.count("sink-timeout")) {
 	m_pSink->setTimeout(vm["sink-timeout"].as<size_t>());
 	std::cerr << "Using sink timeout: " << m_pSink->getTimeout()
 		  << " ms" << std::endl;
     }
+    
     if (vm.count("sink-window")) {
-	m_pSink->setWindow(vm["sink-window"].as<size_t>());
+	size_t window = vm["sink-window"].as<size_t>();
+	std::string windowUnits(" buffers");
+	if (useTs) {
+	    window *= 1e9;
+	    windowUnits = " ns";
+	}
+	m_pSink->setWindow(window);
 	std::cerr << "Using sink window: " << m_pSink->getWindow()
-		  << " buffers" << std::endl;
+		  << windowUnits << std::endl;
     }
 
     /////////////////////////////////////////////////////////////////////////
@@ -130,10 +138,8 @@ Receiver::Receiver(po::variables_map& vm) :
 	ejfatUri, ip, port, numThreads, flags
 	);
     
-    if (m_verbose) {
-	std::cout << "----- Receiver configuration -----" << std::endl;
-	printReassemblerFlags(flags);
-     }
+    std::cout << "----- Receiver configuration -----" << std::endl;
+    printReassemblerFlags(flags);
 }
 
 Receiver::~Receiver()
@@ -296,11 +302,9 @@ Receiver::statsThread()
 int
 Receiver::prepareToReceive()
 {
-    if (m_verbose) {
-	std::cout << "Receiving on ports "
-		  << m_pReassembler->get_recvPorts().first << ":" 
-		  << m_pReassembler->get_recvPorts().second << std::endl;
-    }
+    std::cout << "Receiving on ports "
+	      << m_pReassembler->get_recvPorts().first << ":" 
+	      << m_pReassembler->get_recvPorts().second << std::endl;
 
     // Worker registration is NOP if not using control plane:
     

@@ -69,7 +69,6 @@ private:
     size_t m_numThreads;    //!< Number of dequeue threads reading data
     bool m_threadsRunning;  //!< True while running
     bool m_debug;           //!< Enable debugging output
-    bool m_verbose;         //!< Enable verbose output of e.g, configuration
 
     std::vector<boost::thread> m_deqThreads; //!< Dequeue threads
 

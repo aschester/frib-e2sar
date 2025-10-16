@@ -192,10 +192,7 @@ main(int argc, char* argv[])
 	 "data is from NSCLDAQ v12 DDAS [s]");
     opts("useTs",
 	 po::bool_switch()->default_value(false),
-	 "use nanosecond timestamp as event number (else event count) [s]");
-    opts("verbose",
-	 po::value<bool>()->default_value(true),
-	 "enable verbose output [s,r]");    
+	 "use nanosecond timestamp as event number (else event count) [s,r]");
     opts("debug",
 	 po::bool_switch()->default_value(false),
 	 "enable debugging output [s,r]");
@@ -239,7 +236,6 @@ main(int argc, char* argv[])
 	conflicting_options(vm, "recv", "optimize");
 	conflicting_options(vm, "recv", "read-timeout");
 	conflicting_options(vm, "recv", "ddasraw");
-	conflicting_options(vm, "recv", "useTs");
 	
 	option_dependency(vm, "recv", "ip");
         option_dependency(vm, "recv", "port");

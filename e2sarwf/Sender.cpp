@@ -85,8 +85,7 @@ Sender::Sender(po::variables_map& vm) :
     m_threadsRunning(false),
     m_isDdas(vm["ddasraw"].as<bool>()),
     m_useTs(vm["useTs"].as<bool>()),
-    m_debug(vm["debug"].as<bool>()),
-    m_verbose(vm["verbose"].as<bool>())
+    m_debug(vm["debug"].as<bool>())
 {
     /////////////////////////////////////////////////////////////////////////
     // Set instance and register signal handler
@@ -178,7 +177,7 @@ Sender::Sender(po::variables_map& vm) :
 	}
 	
 	auto token = EjfatURI::TokenType::session;
-	if (m_verbose) {
+
 	std::cout << "Getting LB status:" << std::endl;
 	std::cout << "\tContacting: "
 		  << m_pLBManager->get_URI().to_string(token)
@@ -186,7 +185,6 @@ Sender::Sender(po::variables_map& vm) :
 		  << std::endl;
 	std::cout << "\tLB ID: " << m_pLBManager->get_URI().get_lbId()
 		  << std::endl;
-	}
     }
 
     /////////////////////////////////////////////////////////////////////
@@ -196,34 +194,33 @@ Sender::Sender(po::variables_map& vm) :
     auto srcId = vm["srcid"].as<u_int32_t>();
     auto queueSize = vm["queue-size"].as<size_t>();
     
-    m_pSegmenter = std::make_unique<Segmenter>(ejfatUri, m_dataId,
-					       srcId, flags);
+    m_pSegmenter = std::make_unique<Segmenter>(
+	ejfatUri, m_dataId, srcId, flags
+	);
     m_pPool = std::make_unique<BufferPool>(queueSize, m_evtBufSize);
-
-    if (m_verbose) {
-	std::cout << "----- Sender configuration -----" << std::endl;
-	printSegmenterFlags(flags);
-	std::cout << "Using URI:   " << ejfatUri.to_string() << std::endl;
-	if (m_nEvents > 0) {
-	    std::cout << "Sending:     " << m_nEvents << " events" << std::endl;
-	} else {
-	    std::cout << "Sending:     all events" << std::endl;
-	}
-	std::cout << "Data ID:     " << m_dataId << std::endl;
-	std::cout << "Source ID:   " << srcId << std::endl;
-	std::cout << "evtBufSize:  " << m_evtBufSize << " bytes" << std::endl;
-	std::cout << "sendRate:    " << m_rateGbps << " Gbps" << std::endl;
-	std::cout << "Queue size:  " << queueSize << std::endl;
-	std::cout << "E2SAR selected optimizations:  "
-		  << concatWithSeparator(Optimizations::selectedAsStrings())
-		  << std::endl;
-	std::cout << "NSCLDAQ format version:        " << daqVersion
-		  << std::endl;
-	std::cout << "Event number is: "
-		  << (m_useTs ? "first timestamp" : "event count")
-		  << std::endl;
-	std::cout << "--------------------------------" << std::endl;
+    
+    std::cout << "----- Sender configuration -----" << std::endl;
+    printSegmenterFlags(flags);
+    std::cout << "Using URI:   " << ejfatUri.to_string() << std::endl;
+    if (m_nEvents > 0) {
+	std::cout << "Sending:     " << m_nEvents << " events" << std::endl;
+    } else {
+	std::cout << "Sending:     all events" << std::endl;
     }
+    std::cout << "Data ID:     " << m_dataId << std::endl;
+    std::cout << "Source ID:   " << srcId << std::endl;
+    std::cout << "evtBufSize:  " << m_evtBufSize << " bytes" << std::endl;
+    std::cout << "sendRate:    " << m_rateGbps << " Gbps" << std::endl;
+    std::cout << "Queue size:  " << queueSize << std::endl;
+    std::cout << "E2SAR selected optimizations:  "
+	      << concatWithSeparator(Optimizations::selectedAsStrings())
+	      << std::endl;
+    std::cout << "NSCLDAQ format version:        " << daqVersion
+	      << std::endl;
+    std::cout << "Event number is: "
+	      << (m_useTs ? "first timestamp" : "event count")
+	      << std::endl;
+    std::cout << "--------------------------------" << std::endl;	
 }
 
 /**
@@ -257,11 +254,9 @@ Sender::operator()()
 	interEventSleepUsec = 1;
     }
 
-    if (m_verbose) {
-	std::cout << "Inter-event sleep time is " << interEventSleepUsec
-		  << " microseconds" << std::endl;
-    }
-
+    std::cout << "Inter-event sleep time is " << interEventSleepUsec
+	      << " microseconds" << std::endl;
+    
     // Start threads, open sockets. Start sending sync packets:
 
     auto rvoas = m_pSegmenter->openAndStart();    
