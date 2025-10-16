@@ -53,6 +53,8 @@ Workflows are run using a series of Python scripts. As an example, lets look clo
 - `run_evb_and_log.py` : Run NSCLDAQ EVB pipeline to build events from ordered data and write it to disk with the NSCLDAQ `eventlog`
 - `setup_evb.sh` : bash script to initialize the EVB and configure its clients. This script is called by `run_evb_and_log.py` and is generally not intended to be run standalone. Users may need to edit this script to match their particular source configuration.
 
+The intention is that the user can make copies of all the necessary workflow scripts and edit them as needed for their own purposes. The various run scripts import classes from `workflows.py` and `process_runner.py`, so either local copies of these files must exist in the same directory as the run script or their install location needs to be added to the Python path.
+
 The `run_reassemble_and_sort.py` script should be run first to create the ringbuffers needed by the EVB pipeline. Running `run_evb_and_log.py` will call the specified startup script to configure the EVB pipeline and wait for data. The data sources in the startup script are set by the user, similar to a `ReadoutCallouts.tcl` file; other EVB parameters can be set on via the command line. Both the `Reassembler`/`ddasSort` and the EVB pipe/`eventlog` applications will tell you when they are ready to receive data. A ready state for an infinite-duration reassembly process assuming NSCLDAQ 12 data from a DDAS system and the EJFAT load balancer looks like:
 
 #### run_reassemble_and_sort.py.py
@@ -181,3 +183,11 @@ Below is an example command to configure NSCLDAQ 12.1 build to use the same vers
 CXX=/usr/opt/mpi/openmpi-4.1.4/bin/mpicxx \
 PYTHON=/usr/bin/python3
 ```
+
+## Appendix B: Running workflows at NERSC
+
+A few notes for getting things running at NERSC:
+- Docbook docs do not build properly on Perlmutter systems. Edit the top-level CMakeLists.txt file and comment out the docs build directory: `#add_subdirectory(docs)`. A fix would be nice but its low priority.
+- FRIB-E2SAR software binaries may be installed in a non-standard location. Make a local copy of and edit `workflows.py` to point the `e2sarwf` variable to the installation binary directory: `e2sarwf=f"""{str(Path.home())}/frib-e2sar/bin/e2sarwf"""`.
+
+
