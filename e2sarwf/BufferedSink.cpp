@@ -265,7 +265,6 @@ BufferedSink::emitFromWindow()
     // At least two elements needed to check sliding window:
     
     if (m_sortedQueue.size() < 2) {
-	std::cerr << "Not enough data in queue" << std::endl;
 	return false;
     }
 
