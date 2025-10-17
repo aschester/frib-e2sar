@@ -71,7 +71,7 @@ private:
     size_t m_sendCount;      //!< Number of sent event buffers
     bool m_threadsRunning;   //!< True when send loop is active
     bool m_isDdas;           //!< Data is NSCLDAQ v12 DDAS
-    bool m_useTs;            //!< Use nanosecond timestamp as event number
+    bool m_useCt;            //!< Use event counter as event number
     bool m_debug;            //!< Output debugging information
     std::vector<std::string> m_senders; //!< List of sender IP addresses
     

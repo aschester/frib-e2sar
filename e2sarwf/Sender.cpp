@@ -66,6 +66,8 @@ namespace ch = boost::chrono;
 
 Sender* Sender::m_pInstance = nullptr;
 
+const size_t QUEUE_SIZE = 10240; //!< Buffer pool queue depth
+
 /**
  * @details
  * Constructor throws on error, which the caller is expected to handle. 
@@ -84,7 +86,7 @@ Sender::Sender(po::variables_map& vm) :
     m_sendCount(0),
     m_threadsRunning(false),
     m_isDdas(vm["ddasraw"].as<bool>()),
-    m_useTs(vm["useTs"].as<bool>()),
+    m_useCt(vm["useCt"].as<bool>()),
     m_debug(vm["debug"].as<bool>())
 {
     /////////////////////////////////////////////////////////////////////////
@@ -192,12 +194,11 @@ Sender::Sender(po::variables_map& vm) :
     //
 
     auto srcId = vm["srcid"].as<u_int32_t>();
-    auto queueSize = vm["queue-size"].as<size_t>();
     
     m_pSegmenter = std::make_unique<Segmenter>(
 	ejfatUri, m_dataId, srcId, flags
 	);
-    m_pPool = std::make_unique<BufferPool>(queueSize, m_evtBufSize);
+    m_pPool = std::make_unique<BufferPool>(QUEUE_SIZE, m_evtBufSize);
     
     std::cout << "----- Sender configuration -----" << std::endl;
     printSegmenterFlags(flags);
@@ -211,14 +212,14 @@ Sender::Sender(po::variables_map& vm) :
     std::cout << "Source ID:   " << srcId << std::endl;
     std::cout << "evtBufSize:  " << m_evtBufSize << " bytes" << std::endl;
     std::cout << "sendRate:    " << m_rateGbps << " Gbps" << std::endl;
-    std::cout << "Queue size:  " << queueSize << std::endl;
+    std::cout << "Queue size:  " << QUEUE_SIZE << std::endl;
     std::cout << "E2SAR selected optimizations:  "
 	      << concatWithSeparator(Optimizations::selectedAsStrings())
 	      << std::endl;
     std::cout << "NSCLDAQ format version:        " << daqVersion
 	      << std::endl;
     std::cout << "Event number is: "
-	      << (m_useTs ? "first timestamp" : "event count")
+	      << (m_useCt ? "event counter" : "first timestamp")
 	      << std::endl;
     std::cout << "--------------------------------" << std::endl;	
 }
@@ -472,10 +473,10 @@ Sender::sendBuffer(u_int8_t* pData, size_t bytes)
     
     // Event number is either timestamp or event counter:
     EventNum_t evtNum;
-    if (m_useTs) {
-	evtNum = getFirstTimestamp(pData, bytes);
-    } else {
+    if (m_useCt) {
 	evtNum = m_sendCount;
+    } else {
+	evtNum = getFirstTimestamp(pData, bytes);
     }
     auto rvseg = m_pSegmenter->addToSendQueue(
 	pData, bytes, evtNum, m_dataId, /*entropy=*/0, &senderCallback, pData

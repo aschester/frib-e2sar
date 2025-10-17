@@ -104,29 +104,22 @@ private:
     uint64_t m_window;            //!< Sliding window for outputting data
     uint64_t m_lastEmitted;       //!< s_time value of last Buffer emitted
     std::atomic<bool> m_shutdown; //!< Shutdown coordination
-    
+    size_t m_queueCapacity;       //!< Track input queue capacity 
     boost::lockfree::queue<Buffer*> m_inputQueue; //!< Queue pre-sorted data
-    std::deque<Buffer*> m_sortedQueue;   //!< Queue events sorted by s_time
-    
-    std::unique_ptr<DataSink> m_pSink;   //!< Our data sink
-    
-    boost::thread m_outThread;           //!< Thread for output
-    
-    std::condition_variable m_dataReady; //!< Coordinate data ready for output
+    std::deque<Buffer*> m_sortedQueue;   //!< Queue events sorted by s_time    
+    std::unique_ptr<DataSink> m_pSink;   //!< Our data sink    
+    boost::thread m_outThread;           //!< Thread for output    
+    std::condition_variable m_inputDataReady; //!< Coordinate data ready
     std::mutex m_conditionMutex;         //!< Condition variable "dummy" mutex
     std::mutex m_sortMutex;              //!< Mutex for accessing sort queue
     
 public:
     /** 
      * @brief Constructor
-     * @param uri Sink URI
-     * @param queueSize Size of the input queue
-     * @param useTs If true, use timestamp as event number (default=true)
-     * @param timeoutMs Timeout milliseconds for pipeline for flushing data
-     * @param window Sliding window size for flushing data 
+     * @param uri Sink URI (file:// or ringbuffer tcp://)
+     * @param useCt If true, use event counter as event number (default=false)
      */
-    BufferedSink(std::string uri, size_t queueSize, bool useTs=false,
-		 size_t timeoutMs=1000, size_t window=300);
+    BufferedSink(std::string uri, bool useCt=false);
     /** @brief Destructor */
     ~BufferedSink();
 
@@ -154,6 +147,8 @@ public:
     /**
      * @brief Set the sliding window length for determining when to output
      * @param timeout The timeout length in units of Buffer s_time
+     * @warning It is up to the caller to ensure the window is in the proper 
+     * units (timestamps or number of buffers)
      */
     void setWindow(size_t window) { m_window = window; };
     /**
@@ -161,6 +156,22 @@ public:
      * @return The sliding window length in units of Buffer s_time
      */
     size_t getWindow() { return m_window; };
+    /**
+     * @brief Set input queue capacity
+     * @param size_t capacity The desired queue capacity
+     * @note Sets variable to track the queue capacity to the input value
+     */
+    void setInputQueueCapacity(size_t capacity) {
+	m_queueCapacity = capacity;
+	m_inputQueue.reserve(m_queueCapacity);
+    };
+    /**
+    * @brief Get the queue capacity
+    * @return Input queue capacity
+    * @note `capacity()` is private for boost lockfree queues, capacity is 
+    * tracked with a variable which is returned here
+    */
+    size_t getInputQueueCapacity() { return m_queueCapacity; };
 
 private:
     /**
@@ -177,15 +188,26 @@ private:
     void insertBuffer(Buffer* pBuffer);
     /** @brief Poll status to output data when ready */
     void poll();
-    /** @brief Drain the input queue and sort data into sorted queue */
-    void drainInputQueue();
+    /** 
+     * @brief Drain the input queue and sort data into sorted queue 
+     * @return True if new data is available, false otherwise
+     */
+    bool drainInputQueue();
+    /**
+     * @brief Checks if the sort queue has data possibly ready for outputting
+     * @return True if the sorted queue contains any data, false otherwise 
+     */
+    bool haveSortedData();
     /**
      * @brief Check if we have data to output due to the sliding window
      * @return True if so, false otherwise
      */
     bool emitFromWindow();
-    /** @brief Write out the data ready for outputting */
-    void outputData();
+    /** 
+     * @brief Write out the data ready for outputting 
+     * @param flush Force flush (default=false)
+     */
+    void outputData(bool flush=false);
     
     // Ring item utilities:
     
