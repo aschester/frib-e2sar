@@ -46,14 +46,14 @@ namespace ch = std::chrono;
  */
 BufferedSink::BufferedSink(std::string uri, bool useCt) :
     m_timeoutMs(2000),
-    m_window(120*1e9),
+    m_window(300*1e9),
     m_lastEmitted(0),
     m_shutdown(false),
     m_queueCapacity(10240),
     m_inputQueue(m_queueCapacity)
 {
     if (useCt) {
-	m_window = 120;
+	m_window = 300;
     }
     
     m_pSink = std::unique_ptr<DataSink>(makeDataSink(uri));
@@ -267,16 +267,10 @@ BufferedSink::emitFromWindow()
     if (m_sortedQueue.size() < 2) {
 	return false;
     }
-
-    auto newestTime = m_sortedQueue.back()->s_time;
-
-    // Haven't accumulated any timestamps larger than m_window:
     
-    if (newestTime < m_window) {
-	return false;
-    }
+    auto tdiff = m_sortedQueue.back()->s_time - m_sortedQueue.front()->s_time;
 
-    return m_sortedQueue.front()->s_time < (newestTime - m_window);
+    return tdiff > m_window;
 }
 
 /**
@@ -303,11 +297,11 @@ BufferedSink::outputData(bool flush)
 
 	// Queue buffers for outputting:
 
-	auto newestTime = m_sortedQueue.back()->s_time;	
-	auto outputUntil = newestTime;
+	auto newestTime = m_sortedQueue.front()->s_time;	
+	auto outputUntil = newestTime + m_window/2;
 
 	if (!flush) {
-	    outputUntil -= m_window;
+	    outputUntil = m_sortedQueue.back()->s_time;
 	}
 	
 	while (!m_sortedQueue.empty()
