@@ -138,7 +138,7 @@ main(int argc, char* argv[])
     opts("port,p",
 	 po::value<u_int16_t>()->default_value(20000),
 	 "starting UDP port number on which receiver listens. [r] ");
-    opts("deq",
+    opts("dequeue,D",
 	 po::value<size_t>()->default_value(1),
 	 "number of event dequeue threads in receiver [r]");
     opts("cores,c",
@@ -210,7 +210,7 @@ main(int argc, char* argv[])
         conflicting_options(vm, "send", "threads");
         conflicting_options(vm, "send", "period");
 	conflicting_options(vm, "send", "duration");
-        conflicting_options(vm, "send", "deq");
+        conflicting_options(vm, "send", "dequeue");
 	conflicting_options(vm, "send", "port");
 	conflicting_options(vm, "send", "proto");
 	conflicting_options(vm, "send", "hostname");
@@ -271,6 +271,8 @@ main(int argc, char* argv[])
 		receiver();
 	    }
 	} else {
+	    std::cerr << "One of '--send' or '--recv' is required to "
+		      << "run the workflow" << std::endl;
 	    std::cout << od << std::endl;
 	}
     }

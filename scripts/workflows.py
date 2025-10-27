@@ -25,7 +25,7 @@ from process_runner import ProcessRunner
 # defined below your installation directory:
 #
 from pathlib import Path
-e2sarwf=f"""{str(Path.home())}/frib-e2sar/bin/e2sarwf"""
+e2sarwf=f"""{str(Path.home())}/frib-e2sar/bin/2.0-dev/e2sarwf"""
 
 def get_default_reas_parser(prog_name, prog_info) -> argparse.ArgumentParser:
     '''

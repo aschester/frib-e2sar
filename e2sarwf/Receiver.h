@@ -66,7 +66,7 @@ private:
     std::string m_basePath; //!< Base path for file data sink
     std::string m_sinkName; //!< Base name of sink
     int m_duration;         //!< Run duration in seconds
-    size_t m_numThreads;    //!< Number of dequeue threads reading data
+    size_t m_numDeqThreads; //!< Number of dequeue threads
     bool m_threadsRunning;  //!< True while running
     bool m_debug;           //!< Enable debugging output
 
@@ -122,15 +122,15 @@ private:
     /**
      * @brief Register workers, open and start the Reassembler.
      * @return int
-     * @retval EXIT_SUCCESS Success
-     * @retval EXIT_FAILURE Failure, hopefully with error message on stderr
+     * @retval 0 Success
+     * @retval 1 Failure, hopefully with error message on stderr
      */
     int prepareToReceive();
     /**
      * @brief Receive and process data
      * @return int
-     * @retval EXIT_SUCCESS Success
-     * @retval EXIT_FAILURE Failure, hopefully with error message on stderr
+     * @retval 0 Success
+     * @retval 1 Failure, hopefully with error message on stderr
      */
     int receiveEvents();
     /**
