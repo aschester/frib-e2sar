@@ -162,9 +162,6 @@ main(int argc, char* argv[])
     opts("source,s",
 	 po::value<std::string>()->default_value(""),
 	 "URI data source we're reading from [s]");
-    opts("queue-size,q",
-	 po::value<size_t>()->default_value(10240),
-	 "queue size for recycling send buffers [s,r]");
     opts("proto",
 	 po::value<std::string>()->default_value("ring"),
 	 "data sink URI protocol (file or ring) [r]");
@@ -190,9 +187,9 @@ main(int argc, char* argv[])
     opts("ddasraw",
 	 po::bool_switch()->default_value(false),
 	 "data is from NSCLDAQ v12 DDAS [s]");
-    opts("useTs",
+    opts("useCt",
 	 po::bool_switch()->default_value(false),
-	 "use nanosecond timestamp as event number (else event count) [s,r]");
+	 "use event count as event number (else nanosecond timestamp) [s,r]");
     opts("debug",
 	 po::bool_switch()->default_value(false),
 	 "enable debugging output [s,r]");

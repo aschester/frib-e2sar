@@ -79,10 +79,9 @@ Receiver::Receiver(po::variables_map& vm) :
     //
 
     auto sinkUri = makeSinkUri();
-    auto queueSize = vm["queue-size"].as<size_t>();    
-    auto useTs = vm["useTs"].as<bool>();
+    auto useCt = vm["useCt"].as<bool>();
 
-    m_pSink = std::make_unique<BufferedSink>(sinkUri, queueSize, useTs);
+    m_pSink = std::make_unique<BufferedSink>(sinkUri, useCt);
     
     if (vm.count("sink-timeout")) {
 	m_pSink->setTimeout(vm["sink-timeout"].as<size_t>());
@@ -91,11 +90,11 @@ Receiver::Receiver(po::variables_map& vm) :
     }
     
     if (vm.count("sink-window")) {
-	size_t window = vm["sink-window"].as<size_t>();
-	std::string windowUnits(" buffers");
-	if (useTs) {
-	    window *= 1e9;
-	    windowUnits = " ns";
+	size_t window = vm["sink-window"].as<size_t>()*1e9;
+	std::string windowUnits(" ns");
+	if (useCt) {
+	    size_t window = vm["sink-window"].as<size_t>();
+	    windowUnits = " buffers";
 	}
 	m_pSink->setWindow(window);
 	std::cerr << "Using sink window: " << m_pSink->getWindow()
