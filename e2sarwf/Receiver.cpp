@@ -90,15 +90,15 @@ Receiver::Receiver(po::variables_map& vm) :
     }
     
     if (vm.count("sink-window")) {
-	size_t window = vm["sink-window"].as<size_t>()*1e9;
-	std::string windowUnits(" ns");
+	size_t window = vm["sink-window"].as<size_t>()*1e6; // ms -> ns
+	std::string windowUnits("ns");
 	if (useCt) {
 	    size_t window = vm["sink-window"].as<size_t>();
-	    windowUnits = " buffers";
+	    windowUnits = "buffers";
 	}
 	m_pSink->setWindow(window);
 	std::cerr << "Using sink window: " << m_pSink->getWindow()
-		  << windowUnits << std::endl;
+		  << " " << windowUnits << std::endl;
     }
 
     /////////////////////////////////////////////////////////////////////////
