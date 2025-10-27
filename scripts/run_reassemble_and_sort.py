@@ -9,10 +9,9 @@ import os
 from workflows import ReassembleAndSort
 
 if __name__ == "__main__":
-    ''' @brief Main function - create the app and run it'''
-    daqbin = os.getenv("DAQBIN")
-    if daqbin is None:
-        print("NSCLDAQ 12 environment is required")
+    '''@brief Main function - create the app and run it'''
+    if os.getenv("DAQBIN") is None:
+        print("[main] NSCLDAQ 12 environment is required")
         sys.exit(1)
 
     try:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 '''@file run_evb_and_log.py
- @details 
+@details 
 Build raw NSCLDAQ data into events and write it to disk (type independent)
 '''
 

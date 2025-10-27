@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 '''@file run_reassemble_and_log.py
- @details 
+@details 
 Reassemble and log pre-built NSCLDAQ data (type independent)
 '''
 
