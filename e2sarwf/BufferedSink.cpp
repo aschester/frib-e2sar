@@ -36,6 +36,7 @@
 
 const size_t BATCH_SIZE = 1280; //!< Max buffers per batch
 
+
 using namespace ufmt;
 namespace ch = std::chrono;
 
@@ -45,15 +46,15 @@ namespace ch = std::chrono;
  * the URI string is well formed. Starts output thread.
  */
 BufferedSink::BufferedSink(std::string uri, bool useCt) :
-    m_timeoutMs(2000),
-    m_window(300*1e9),
+    m_timeoutMs(500),
+    m_window(60*1e9),
     m_lastEmitted(0),
     m_shutdown(false),
     m_queueCapacity(10240),
     m_inputQueue(m_queueCapacity)
 {
     if (useCt) {
-	m_window = 300;
+	m_window = 60;
     }
     
     m_pSink = std::unique_ptr<DataSink>(makeDataSink(uri));
@@ -91,22 +92,22 @@ BufferedSink::addData(uint64_t timestamp, void* pData, size_t nBytes)
 	return;
     }
 
-    m_inputDataReady.notify_one();
+    m_inputReady.notify_one();
 }
 
 void
 BufferedSink::stopThreads()
 {
     m_shutdown.store(true);
-    m_inputDataReady.notify_all(); // Wake up output thread
+    m_inputReady.notify_all(); // Wake up output thread
 
     if (m_outThread.joinable()) {
 	m_outThread.join();
     }
     
     std::cout << "Flushing remaining event buffer data..." << std::endl;
-    drainInputQueue();
-    outputData(/*flush=*/true);
+    drainAndSort();
+    outputData(true);
 }
 
 /****************************************************************************
@@ -184,20 +185,19 @@ BufferedSink::poll()
 
 	// Move data from the input to the sorting queue:
 	
-	bool dataAvail = drainInputQueue();
+	bool dataAvail = drainAndSort();
 	if (dataAvail) {
 	    lastDataTime = ch::high_resolution_clock::now();
-	}
-	
+	}	
 
 	// We are ready to output data if one of two things are true:
 	// 1. The sliding window check says data are ready for outputting
 	// 2. We have hit a timeout limit
 	    
-	auto dataTimeout = ch::high_resolution_clock::now() - lastDataTime;	
+	auto dataTimeout = ch::high_resolution_clock::now() - lastDataTime;
 	bool windowReady = emitFromWindow();
-	bool timeoutFlush = (dataTimeout > ch::milliseconds(m_timeoutMs))
-	    && haveSortedData();
+	bool timeoutFlush = ((dataTimeout > ch::milliseconds(m_timeoutMs))
+			     && haveSortedData());
 	
 	bool ready = windowReady || timeoutFlush;
 
@@ -207,8 +207,8 @@ BufferedSink::poll()
 	    bool flush = !windowReady && timeoutFlush;
 	    outputData(flush);
 	} else {
-	    std::unique_lock<std::mutex> lock(m_conditionMutex);
-	    m_inputDataReady.wait_for(lock, ch::milliseconds(100));
+	    std::unique_lock<std::mutex> lock(m_inputMutex);
+	    m_inputReady.wait_for(lock, ch::milliseconds(100));
 	}	    
     }    
 }
@@ -221,7 +221,7 @@ BufferedSink::poll()
  * access, so DO NOT call this function from another thread. 
  */
 bool
-BufferedSink::drainInputQueue()
+BufferedSink::drainAndSort()
 {
     std::vector<Buffer*> batch;
     batch.reserve(BATCH_SIZE);
@@ -238,6 +238,7 @@ BufferedSink::drainInputQueue()
 	}
 	return true;
     }
+    
     return false;
 }
 
@@ -248,7 +249,7 @@ BufferedSink::drainInputQueue()
 bool
 BufferedSink::haveSortedData()
 {
-    std::unique_lock<std::mutex> lock(m_sortMutex);
+    std::unique_lock<std::mutex> lock(m_sortMutex);    
     return !m_sortedQueue.empty();
 }
 
@@ -267,10 +268,27 @@ BufferedSink::emitFromWindow()
     if (m_sortedQueue.size() < 2) {
 	return false;
     }
-    
-    auto tdiff = m_sortedQueue.back()->s_time - m_sortedQueue.front()->s_time;
 
-    return tdiff > m_window;
+    auto newest = m_sortedQueue.back()->s_time;
+    auto tdiff = newest - m_sortedQueue.front()->s_time;
+
+    ///
+    // Emit from window at back of queue:
+    //
+    
+    // Haven't accumulated buffers spanning m_window yet:
+    
+    if (tdiff < m_window) {
+	return false;
+    }
+    
+    return m_sortedQueue.front()->s_time < (newest - m_window);
+
+    ///
+    // Emit from window at front of queue:
+    //
+    
+    // return tdiff > m_window;
 }
 
 /**
@@ -280,7 +298,7 @@ BufferedSink::emitFromWindow()
  */
 void
 BufferedSink::outputData(bool flush)
-{
+{   
     std::deque<std::unique_ptr<Buffer>> outputBuffers;
     size_t itemsToOutput = 0;
     
@@ -297,10 +315,19 @@ BufferedSink::outputData(bool flush)
 
 	// Queue buffers for outputting:
 
-	auto newestTime = m_sortedQueue.front()->s_time;	
-	auto outputUntil = newestTime + m_window/2;
+	///
+	// Emit from window at front of queue:
+	//
+	
+	// auto outputUntil = m_sortedQueue.front()->s_time + m_window/2;
 
-	if (!flush) {
+	///
+	// Emit from window at back of queue:
+	//
+	
+	auto outputUntil = m_sortedQueue.back()->s_time - m_window;
+
+	if (flush) {
 	    outputUntil = m_sortedQueue.back()->s_time;
 	}
 	

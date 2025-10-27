@@ -64,9 +64,9 @@ struct Buffer
     /** 
      * @brief Destructor 
      * @details
-     * Free memory pointed to by pData 
+     * Free malloc'd memory pointed to by pData 
      */
-    ~Buffer() { free(s_pData); };
+    ~Buffer() { delete[] static_cast<uint8_t*>(s_pData); };
 };
 
 /**
@@ -105,13 +105,13 @@ private:
     uint64_t m_lastEmitted;       //!< s_time value of last Buffer emitted
     std::atomic<bool> m_shutdown; //!< Shutdown coordination
     size_t m_queueCapacity;       //!< Track input queue capacity 
-    boost::lockfree::queue<Buffer*> m_inputQueue; //!< Queue pre-sorted data
-    std::deque<Buffer*> m_sortedQueue;   //!< Queue events sorted by s_time    
-    std::unique_ptr<DataSink> m_pSink;   //!< Our data sink    
-    boost::thread m_outThread;           //!< Thread for output    
-    std::condition_variable m_inputDataReady; //!< Coordinate data ready
-    std::mutex m_conditionMutex;         //!< Condition variable "dummy" mutex
-    std::mutex m_sortMutex;              //!< Mutex for accessing sort queue
+    boost::lockfree::queue<Buffer*> m_inputQueue; //!< Queued pre-sorted data
+    std::deque<Buffer*> m_sortedQueue;    //!< Queued events sorted by s_time
+    std::unique_ptr<DataSink> m_pSink;    //!< Our data sink    
+    boost::thread m_outThread;            //!< Thread for output    
+    std::condition_variable m_inputReady; //!< Coordinate data ready
+    std::mutex m_inputMutex;              //!< m_inputReady.wait_for() mutex
+    std::mutex m_sortMutex;               //!< Mutex for accessing sort queue
     
 public:
     /** 
@@ -189,10 +189,10 @@ private:
     /** @brief Poll status to output data when ready */
     void poll();
     /** 
-     * @brief Drain the input queue and sort data into sorted queue 
+     * @brief Drain the input queue and insert data into the sorted queue
      * @return True if new data is available, false otherwise
      */
-    bool drainInputQueue();
+    bool drainAndSort();
     /**
      * @brief Checks if the sort queue has data possibly ready for outputting
      * @return True if the sorted queue contains any data, false otherwise 
@@ -205,7 +205,6 @@ private:
     bool emitFromWindow();
     /** 
      * @brief Write out the data ready for outputting 
-     * @param flush Force flush (default=false)
      */
     void outputData(bool flush=false);
     
