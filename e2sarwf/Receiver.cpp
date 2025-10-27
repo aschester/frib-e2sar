@@ -58,7 +58,7 @@ Receiver::Receiver(po::variables_map& vm) :
     m_basePath(vm["basepath"].as<std::string>()),
     m_sinkName(vm["sinkname"].as<std::string>()),
     m_duration(vm["duration"].as<int>()),
-    m_numThreads(vm["deq"].as<size_t>()),
+    m_numDeqThreads(vm["dequeue"].as<size_t>()),
     m_threadsRunning(false),
     m_debug(vm["debug"].as<bool>())
 {
@@ -90,15 +90,15 @@ Receiver::Receiver(po::variables_map& vm) :
     }
     
     if (vm.count("sink-window")) {
-	size_t window = vm["sink-window"].as<size_t>()*1e9;
-	std::string windowUnits(" ns");
+	size_t window = vm["sink-window"].as<size_t>()*1e6; // ms -> ns
+	std::string windowUnits("ns");
 	if (useCt) {
 	    size_t window = vm["sink-window"].as<size_t>();
-	    windowUnits = " buffers";
+	    windowUnits = "buffers";
 	}
 	m_pSink->setWindow(window);
 	std::cerr << "Using sink window: " << m_pSink->getWindow()
-		  << windowUnits << std::endl;
+		  << " " << windowUnits << std::endl;
     }
 
     /////////////////////////////////////////////////////////////////////////
@@ -130,7 +130,6 @@ Receiver::Receiver(po::variables_map& vm) :
     auto ip_s = vm["ip"].as<std::string>();
     auto port = vm["port"].as<u_int16_t>();
     auto numThreads = vm["threads"].as<size_t>(); // Reassembler
-    auto deqThreads = vm["deq"].as<size_t>();     // Dequeue/read
 
     ip::address ip = ip::make_address(ip_s);    
     m_pReassembler = std::make_unique<Reassembler>(
@@ -157,13 +156,15 @@ Receiver::operator()()
 	throw std::runtime_error("Failed to initialize and start Reassembler");
     }    
 
-    for (size_t i = 0; i < m_numThreads; i++) {
+    for (size_t i = 0; i < m_numDeqThreads; i++) {
 	m_deqThreads.push_back(boost::thread(&Receiver::receiveEvents, this));
     }
     
     for (auto& t : m_deqThreads) {
      	t.join();
     }
+
+    statsThread.join();
     
     return EXIT_SUCCESS;
 }
@@ -311,14 +312,14 @@ Receiver::prepareToReceive()
     if (rvhn.has_error()) {
 	std::cerr << "Failed to get hostname: " << rvhn.error().message()
 		  << " with error code " << rvhn.error().code() << std::endl;
-	return EXIT_FAILURE;
+	return 1;
     }
 
     auto rvrw = m_pReassembler->registerWorker(rvhn.value());
     if (rvrw.has_error()) {
 	std::cerr << "Unable to register worker: " << rvrw.error().message()
 		  << " with error code " << rvrw.error().code() << std::endl;
-        return EXIT_FAILURE;
+        return 1;
     }
 
     boost::this_thread::sleep_for(ch::seconds(1));
@@ -327,10 +328,10 @@ Receiver::prepareToReceive()
     if (rvoas.has_error()) {
      	std::cerr << "Unable to start Reassembler: " << rvoas.error().message()
 		  << " with error code " << rvoas.error().code() << std::endl;
-	return EXIT_FAILURE;
+	return 1;
     }
     
-    return EXIT_SUCCESS;
+    return 0;
 }
 
 int
@@ -366,7 +367,7 @@ Receiver::receiveEvents()
 		std::cerr << "Reassembler failed to get event: "
 			  << rv.error().message() << " with error code "
 			  << rv.error().code() << std::endl;
-		return EXIT_FAILURE;
+		return 1;
 	    }
 
 	    if (rv.value() == -1) { // Queue is empty
@@ -395,7 +396,7 @@ Receiver::receiveEvents()
 		  << std::endl;
     }
     
-    return EXIT_SUCCESS;
+    return 0;
 }
 
 std::string

@@ -25,7 +25,7 @@ from process_runner import ProcessRunner
 # defined below your installation directory:
 #
 from pathlib import Path
-e2sarwf=f"""{str(Path.home())}/frib-e2sar/bin/e2sarwf"""
+e2sarwf="/usr/opt/frib-e2sar/2.0-dev/bin/e2sarwf"
 
 def get_default_reas_parser(prog_name, prog_info) -> argparse.ArgumentParser:
     '''
@@ -45,6 +45,11 @@ def get_default_reas_parser(prog_name, prog_info) -> argparse.ArgumentParser:
         default=f"{os.getcwd()}/reassembler_config.ini"
     )
     parser.add_argument(
+        "-u", "--uri",
+        help="specify EJFAT_URI on the command line instead of envvar",
+        default=None
+    )
+    parser.add_argument(
         "--ip",
         help="IP addr the Reassembler process",
         default="35.11.82.130"
@@ -60,12 +65,7 @@ def get_default_reas_parser(prog_name, prog_info) -> argparse.ArgumentParser:
         default=1
     )
     parser.add_argument(
-        "-S", "--sinkname",
-        help="reassembled sink ringbuffer sinkname",
-        default="reas"
-    )
-    parser.add_argument(
-        "--deq",
+        "-D", "--dequeue",
         help="number of dequeue threads",
         default=1
     )
@@ -75,14 +75,14 @@ def get_default_reas_parser(prog_name, prog_info) -> argparse.ArgumentParser:
         default=0
     )
     parser.add_argument(
-        "-u", "--uri",
-        help="specify EJFAT_URI on the command line instead of envvar",
-        default=None
+        "-S", "--sinkname",
+        help="reassembled sink ringbuffer sinkname",
+        default="reas"
     )
     parser.add_argument(
-        "--useTs",
+        "--useCt",
         action="store_true",
-        help="use nanosecond timestamp as event number"
+        help="use event count as event number"
     )
 
     return parser
@@ -258,13 +258,13 @@ class ReassembleAndSort(WorkflowBase):
             f"--ip {self.args.ip} "     
             f"--port {self.args.port} " 
             f"--threads {self.args.threads} "  
-            f"--deq {self.args.deq} "   
+            f"--dequeue {self.args.dequeue} "   
             f"--duration {self.args.duration} " 
             f"--sinkname {self.args.sinkname}"
         )
 
-        if self.args.useTs:
-            reas_cmd += f" --useTs"
+        if self.args.useCt:
+            reas_cmd += f" --useCt"
         if self.args.uri is not None:
             reas_cmd += f" --uri {self.args.uri}"
             
@@ -384,13 +384,13 @@ class ReassembleAndLog(WorkflowBase):
             f"--ip {self.args.ip} "
             f"--port {self.args.port} "
             f"--threads {self.args.threads} "
-            f"--deq {self.args.deq} "
+            f"--dequeue {self.args.dequeue} "
             f"--duration {self.args.duration} "
             f"--sinkname {self.args.sinkname} "
         )
 
-        if self.args.useTs:
-            reas_cmd += f"--useTs"
+        if self.args.useCt:
+            reas_cmd += f"--useCt"
         if self.args.uri is not None:
             reas_cmd += f" --uri {self.args.uri}"
         
@@ -537,13 +537,13 @@ class ReassembleAndFit(WorkflowBase):
             f"--ip {self.args.ip} "
             f"--port {self.args.port} "
             f"--threads {self.args.threads} "
-            f"--deq {self.args.deq} "
+            f"--dequeue {self.args.dequeue} "
             f"--duration {self.args.duration} "
             f"--sinkname {self.args.sinkname} "
         )
 
-        if self.args.useTs:
-            reas_cmd += f"--useTs"
+        if self.args.useCt:
+            reas_cmd += f"--useCt"
         if self.args.uri is not None:
             reas_cmd += f" --uri {self.args.uri}"
             
