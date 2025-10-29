@@ -90,7 +90,7 @@ Receiver::Receiver(po::variables_map& vm) :
     }
     
     if (vm.count("sink-window")) {
-	size_t window = vm["sink-window"].as<size_t>()*1e6; // ms -> ns
+	size_t window = vm["sink-window"].as<size_t>()*1e9; // s -> ns
 	std::string windowUnits("ns");
 	if (useCt) {
 	    size_t window = vm["sink-window"].as<size_t>();
