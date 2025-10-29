@@ -98,6 +98,7 @@ Sender::Sender(po::variables_map& vm) :
     } else {
 	setInstance(this);
 	std::signal(SIGINT, ctrlCHandler);
+	std::signal(SIGTERM, ctrlCHandler);
     }
     
     /////////////////////////////////////////////////////////////////////////
