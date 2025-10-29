@@ -360,7 +360,11 @@ BufferedSink::outputData(bool flush)
 
     // Reset last time:
 
-    m_lastEmitted = outputBuffers.back()->s_time;
+    if (flush) {
+	m_lastEmitted = 0; // Reset when buffer is flushed
+    } else {
+	m_lastEmitted = outputBuffers.back()->s_time;
+    }
 }
 
 // Ring item utilities:
