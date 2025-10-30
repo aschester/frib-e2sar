@@ -187,7 +187,7 @@ PYTHON=/usr/bin/python3
 ## Appendix B: Running workflows at NERSC
 
 A few notes for getting things running at NERSC:
-- Docbook docs do not build properly on Perlmutter systems. Edit the top-level and UnifiedForamt CMakeLists.txt files and comment out the docs build directory: `#add_subdirectory(docs)`. A fix would be nice but its low priority.
-- FRIB-E2SAR software binaries may be installed in a non-standard location. Make a local copy of and edit `workflows.py` to point the `e2sarwf` variable to the installation binary directory: `e2sarwf=f"""{str(Path.home())}/frib-e2sar/bin/e2sarwf"""`.
+- Docbook docs do not build properly on Perlmutter. If you are building from source, edit the top-level and UnifiedFormat's top-level `CMakeLists.txt` files and comment out the docs build directory: `#add_subdirectory(docs)`. A fix would be nice but its low priority.
+- FRIB-E2SAR software binaries may be installed in a non-standard location, by default it is assumed to be `/usr/opt/frib-e2sar/2.0-dev`. Make a local copy of and edit `workflows.py` to point the `e2sarwf` variable to the installation binary directory.
 
 
