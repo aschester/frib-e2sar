@@ -6,6 +6,7 @@ Run the Reassembler and DDASToys/EventEditor trace fitting (DDAS only)
 '''
 
 import os
+import sys
 from workflows import ReassembleAndFit
 
 if __name__ == "__main__":
@@ -19,6 +20,8 @@ if __name__ == "__main__":
         workflow.run()
     except KeyboardInterrupt:
         print("[main] Process interrupted, exiting")
+        sys.exit(0)
     except Exception as e:
         print(f"[main] Unexpected {type(e).__name__}: {e}")
+        sys.exit(1)
     

@@ -13,6 +13,7 @@ import argparse
 import os
 import shlex
 import signal
+import subprocess
 import sys
 import threading as th
 import time
@@ -121,6 +122,7 @@ class WorkflowBase:
         self.is_shutdown = False # Prevent double shutdown on Ctrl-C
         
         signal.signal(signal.SIGINT, self._shutdown_handler)
+        signal.signal(signal.SIGTERM, self._shutdown_handler)
 
     def run(self) -> None:
         '''@brief Run the workflow - must be implemented by derived classes'''
@@ -636,6 +638,9 @@ class EvbAndLog(WorkflowBase):
         self.evb_event = th.Event()
         self.log_proc = None
         self.log_event = th.Event()
+
+        signal.signal(signal.SIGINT, self._shutdown_handler)
+        signal.signal(signal.SIGTERM, self._shutdown_handler)
 
     def run(self) -> None:
         '''@brief Run the process'''
