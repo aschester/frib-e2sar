@@ -58,6 +58,7 @@ BufferPool::pop()
 	std::lock_guard<std::mutex> lock(m_mutex);
 	buffer = m_pool.malloc();
 	if (!buffer) {
+	    std::cerr << "Failed to allocate buffer from pool!" << std::endl;
 	    throw std::bad_alloc();
 	}
     }
